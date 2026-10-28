@@ -9,7 +9,7 @@
 절연 열화 의심의 상승 추세를 조기에 감지하며, MQTT 보안 통신을 통해 설비 위치와 점검 권고를
 웹 대시보드에 전달하는 제조설비 예방감시 시스템 (저전압 PoC).
 
-- 용도: 대학 개별 프로젝트(기말 대체, 한국컴퓨터정보학회 논문등재) + AX기반 제조공정활용기술(온디바이스 AI 제조플랫폼) 과정 출품
+- 용도: 대학 개별 프로젝트(기말 대체, 한국컴퓨터정보학회 논문지(KCI 등재) 투고·게재) + AX기반 제조공정활용기술(온디바이스 AI 제조플랫폼) 과정 출품
 - 기간: 2026-10 ~ 2026-12 중순 (1인 개발, 컴퓨터공학 전공, 소프트웨어 중심)
 
 ## 2. 범위 (반드시 지킬 것)
@@ -32,15 +32,21 @@
 - DHT20 습도값은 "습도를 반영한 합성 정상 변동" 함수의 입력이다. 실제 시험 전류는 습도로 변하지 않는다.
 - 위치(동/라인/설비)는 AI가 추정하지 않는다. `config/devices.yaml`에 등록된 자산 정보다.
 - 이상 상태가 일정 시간 지속될 때만 알림을 확정한다 (순간 노이즈 억제).
+  D2는 **주의 진입 후**부터 잰다 (2026-10-26 확정). 센서장애 동안의 시간은 지속 시간에 넣지 않는다.
 - 배속 시연: 기본 `시연 1분 = 가상 운전 1일` (×1440). 대시보드와 로그에 배속을 항상 표시한다.
 - 점검권고 수동 확인(ack)은 웹 대시보드에서만 한다. 웹 서버가 MQTT `cmd` 토픽으로 디바이스에 전달한다 (물리 버튼 없음).
+- **AI 학습은 Pi에서 한다 (온디바이스 학습, 2026-10-27 확정).** 설치 후 처음 N일은 학습 기간(판정 없음),
+  이후 SQLite의 정상 구간으로 선형 회귀를 학습해 계수·σ를 JSON으로 저장한다. 하드웨어 변경 없음.
+  이상 점수는 정상 잔차의 σ로 정규화한다 (설비별 절대 기준값 불필요).
+- AI 비교 구성 (2026-10-27 확정): 고정 임계값 / Isolation Forest / 선형 회귀 + 잔차(제안 방법).
+- 짧은 순간 급등 (2026-10-27 확정): 1회는 경보 없이 "순간 튐" 이벤트로 기록, 일정 기간 내 반복되면 주의.
 
 ## 4. MVP vs 확장
 
 | 구분 | MVP (반드시 완성) | 확장 (시간 여유 시) |
 |---|---|---|
 | 하드웨어 | Pi, ADS1115, MCP4725, 가변저항, DHT20, OLED, LED 3, 버튼 3 | 12V AC + CT 보정 실험 |
-| AI | 정상 패턴 학습, 이상 점수, 고정 임계값 비교 | 위험 도달 시점 예측, 딥러닝 비교 |
+| AI | 정상 패턴 온디바이스 학습, 이상 점수, 고정 임계값·Isolation Forest 비교 | 위험 도달 시점 예측, 딥러닝 비교 |
 | 통신·보안 | MQTT, TLS(암호화·브로커 인증), 장치별 ID/비밀번호, 토픽 ACL | mTLS (`require_certificate true`) |
 | 웹 | FastAPI + WebSocket, 설비 위치·추세·알림 이력 | 여러 가상 라인 확장, 메신저 알림 |
 
@@ -62,9 +68,13 @@
 
 ## 7. 기술 스택
 
-- Python 3.11 (Raspberry Pi OS Bookworm 기준), 가상환경 사용
+- Python >=3.11 (`requires-python = ">=3.11"`). PC 개발 venv는 3.12, Pi는 Raspberry Pi OS Trixie(64-bit Lite) 기본 Python(실기기에서 `python3 --version`으로 확인)
+  - PC·Pi 모두 가상환경 사용 (Pi OS는 시스템 Python에 pip 설치 차단, PEP 668)
+  - 3.12+ 전용 문법(`type X = ...`, `def f[T]()` 등)은 쓰지 않는다
 - 센서: smbus2 또는 Adafruit CircuitPython 라이브러리 (ADS1115, MCP4725), DHT20(AHT20) I2C 드라이버
 - AI: scikit-learn, NumPy, pandas
+  - 모델은 Pi에서 학습하고 계수를 JSON으로 저장한다 (pickle 불사용 → 버전 간 로드 문제·보안 위험 없음).
+    PC 평가와 Pi 결과가 같은 수치가 나오도록 scikit-learn·NumPy 버전은 PC·Pi에서 동일하게 고정한다
 - 저장: SQLite
 - 통신: Mosquitto, paho-mqtt
 - 웹: FastAPI, uvicorn, WebSocket, 정적 HTML/JavaScript + Chart.js
@@ -89,9 +99,109 @@
 
 ## 9. 현재 단계
 
-- [ ] 1단계: 저장소 골격, `sim` 모드로 수집 → 판정 → 저장 → MQTT → 웹 표시까지 end-to-end 동작
-- [ ] 2단계: 시나리오 생성기(배속), 고정 임계값 baseline
-- [ ] 3단계: AI 모델 학습·평가, 지표 산출
+- [x] 1단계: 저장소 골격, `sim` 모드로 수집 → 판정 → 저장 → MQTT → 웹 표시까지 end-to-end 동작 (2026-10-25)
+- [x] 2단계: 시나리오 생성기(배속), 고정 임계값 baseline (2026-10-26)
+- [ ] 3단계: AI 모델 학습·평가, 지표 산출 (진행 중: 0 의존성 완료)
 - [ ] 4단계: TLS·ID/비밀번호·ACL, 보안 시연
 - [ ] 5단계: Pi 실제 하드웨어 연결 (ADS1115, MCP4725, DHT20, OLED, LED, 버튼)
 - [ ] 6단계: 통합, 시연 영상, 보고서
+
+## 10. 실행 방법 (PC, sim 모드)
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # 최초 1회
+.venv/bin/pytest -q                                          # 상태 머신 테스트
+# 터미널 1: 웹 서버 (저장소 루트에서)
+.venv/bin/uvicorn web.app:app --host 0.0.0.0 --port 8000
+# 터미널 2: 디바이스 에이전트 (--scenario 생략 시 normal, 이상은 시작 후 가상 1일부터)
+#   normal | gradual_rise | humidity_rise | short_spike | sharp_rise | data_loss
+.venv/bin/python -m leakmon.main --scenario sharp_rise
+# 브라우저: http://localhost:8000
+```
+- 브로커: 로컬 Mosquitto `localhost:1883` (1단계는 평문·익명, 4단계에서 TLS·인증·ACL)
+
+## 11. 단계별 진행 기록
+
+### 1단계 (2026-10-25) — 완료
+- 구현
+  - `config/settings.yaml`·`devices.yaml`, `src/leakmon/config.py` (환경변수 `LEAKMON_HW` 우선)
+  - `sensors/sim.py`: 정상값 4.5mA + 노이즈, `--drift`로 직선 상승 (2단계 시나리오 생성기 전 임시)
+  - `ai/baseline.py`: 고정 기준값 점수 `(측정-4.5)/(9.0-4.5)` (임시, 습도 미반영)
+  - `state.py`: 정상/주의/점검권고/센서장애, 지속 시간(가상 분) 확인 후 전이, ack 시 D1 재적용
+  - `storage.py`: SQLite(WAL) telemetry·alerts, `mqtt_client.py`: 발행 + LWT + cmd 구독
+  - `main.py`: 수집→점수→상태→저장→발행 루프, ack는 스레드 간 `Event` 플래그로 메인 루프에서만 처리
+  - `web/app.py`: MQTT 구독→WebSocket push, 이력 API, ack API(등록 장치만 허용) / `web/static`: 대시보드(Chart.js)
+- 검증
+  - `pytest` 7개 통과 (정상 유지, 순간 급등 억제, 주의→점검권고, 회복, ack 후 D1 재적용, 센서장애·복구)
+  - 실제 Mosquitto로 end-to-end: telemetry 수신 → 주의 → 점검권고 alert → 웹 ack → 정상 alert,
+    디바이스 종료 시 offline 표시, `#`·미등록 device_id 요청 404 거부, 이력 API 정상
+- 남은 임시 처리 (`shortcut:` 주석): sim 직선 drift, 고정 expected_mA
+
+### 1단계 코드 리뷰 반영 (2026-10-26)
+- `/code-review` 지적 10건 중 실제 버그 5건 + 설계 결정 1건 반영 (아래 §12 표)
+- 미반영(이후 단계): 실행 간 가상 시간 역행(2단계 `run_id`), sim 정상값 4.5 하드코딩(2단계 시나리오 생성기),
+  이력 조회마다 DB 연결·DDL(성능 문제 시), 웹 `client_id="web"` 고정(4단계 계정·ACL), 이력 조회~WebSocket 연결 사이 메시지 유실
+- 검증
+  - `pytest` 9개 통과 (추가: 장애 시간 지속 시간 미포함, D2는 주의 진입부터)
+  - 분리 환경(임시 브로커 18830·임시 DB·웹 8001) e2e: 온라인 ack 200 → 정상 / 오프라인 ack 409 /
+    브로커 끊김 ack 503 / 브로커 끊긴 채 디바이스 Ctrl+C → 종료 코드 0, traceback 없음
+
+### 2단계 (2026-10-26) — 완료
+- 구현
+  - `scenario.py`: 시나리오 1~6을 가상 시각의 함수로 생성 (#7 보안은 4단계). seed 고정으로 재현 가능
+    - 합성 정상 변동: `4.5 + 0.08×(습도−55) + 가동(08~18시) 0.4` mA, 습도는 55±5%p 하루 주기(새벽 6시 최고)
+    - 첫 가상 1일은 정상, 이후 이상: 완만한 상승 0.5mA/일, 습도 +35%p(2일간), 1시간 +6mA 급등,
+      시간당 2mA 급상승(최대 +7mA), 3시간 데이터 끊김
+    - 설비의 "실제" 특성(시나리오 상수)과 탐지기 설정(`settings.yaml` baseline)은 일부러 분리 (1단계 리뷰 #9 정리)
+  - `sensors`: `read(now)`로 가상 시각을 받아 시나리오 값을 반환 (Pi에서는 같은 값을 DAC로 출력할 예정)
+  - `main.py`: `--drift` → `--scenario`. 가상 시작 시각을 오늘 00:00으로 고정 (시간대 패턴 재현)
+  - `run_id`(실행 시작 시각): DB 열·telemetry·alert에 추가. 이력 API는 최신 실행만, 대시보드는 새 실행이 오면 차트·알림 초기화,
+    시나리오 이름 표시 (1단계 리뷰 #6 해결). 1단계 DB는 시작 시 `run_id` 열을 자동 추가
+  - 고정 임계값 baseline(`ai/baseline.py`)은 그대로 두고, 6개 시나리오에서의 동작을 테스트로 고정
+- baseline 결과 (오프라인 재생, 실제 `settings.yaml` 기준, 시작 후 경과 시간)
+
+  | 시나리오 | 결과 | 의미 |
+  |---|---|---|
+  | 1 정상 운전 | 경보 없음 (7일) | 정상 변동에서 오경보 없음 |
+  | 2 완만한 상승 | 4일 10:00 주의 → 정상/주의 반복 → 9일 10:00 점검권고 | 감지가 늦고, 하루 주기 변동 때문에 임계선 근처에서 반복 → AI 비교 대상 |
+  | 3 습도 상승 | 2일 10:00 주의 (점검권고 없음) | 정상 변동인데 경보 = baseline 오경보 |
+  | 4 짧은 순간 급등 | 경보 없음 | 지속 시간 확인으로 억제 |
+  | 5 지속적 급상승 | 1일 03:12 주의 → 1일 07:12 점검권고 | 이상 시작 후 7시간 만에 점검권고 |
+  | 6 데이터 끊김 | 1일 00:48 센서장애 → 1일 03:12 정상 | 1시간 초과 미수신 시 센서장애, 복구 시 이전 판정 |
+- 검증
+  - `pytest` 16개 통과 (상태 머신 9 + 시나리오 7: 위 표의 기대 결과, 같은 seed 같은 데이터)
+  - 분리 환경 e2e (임시 브로커·DB·웹 8001): 1단계 형식 DB 자동 마이그레이션, sharp_rise 실시간 주의(1일 03:28)·점검권고(1일 07:30),
+    새 실행(data_loss) 시작 시 이력 API가 새 실행만 반환, 센서장애(1일 00:59) → 복구(1일 03:00), 새로고침 배지 보정 조건 성립
+- 남은 일 (3단계): 시나리오별 정답 라벨(이상 시작 시점), 학습 데이터셋 생성, AI 잔차 점수, 지표 산출
+
+### 3단계: AI 모델 학습·평가 (진행 중, 2026-10-27~, 학습 모드: 핵심 로직은 사용자 작성)
+- 목표 투고처: 한국컴퓨터정보학회 논문지(KCI). sim 지표는 예비 결과, 최종 지표는 5단계 A1 경로로 재측정
+- 결정 (2026-10-27, 토의는 plan.md): 온디바이스 학습(B안), 비교 3종, 순간 튐 중간안 → §3에 반영
+- 작업 순서 (B안 반영): 0 의존성 → 1 `repeated_spike` 시나리오 → 2 데이터셋·평가 라벨 → 3 특징 → 4 학습 함수(PC·Pi 공용, 계수 JSON)
+  → 5 잔차 → 이상 점수(σ 정규화) → 6 순간 튐 기록·반복 시 주의 → 7 Isolation Forest 비교 → 8 평가 → 9 `main.py` 연결(학습 기간 → 학습 → 판정)
+- [x] 0 의존성 (2026-10-27)
+  - `scikit-learn==1.9.1`, `numpy==2.4.6`을 본 의존성으로 정확히 고정 (Pi에서 추론에 필요)
+    - 근거: scikit-learn 공식 문서(Context7) "다른 버전에서 학습한 모델의 로드는 지원하지 않음, 같은 의존성·Python 버전이면 OS·아키텍처 간 이식 가능"
+  - `pandas>=3.0`은 PC 전용 도구용이라 `dev`에 추가
+  - 검증: PC(Python 3.12) 설치 OK, Pi용 aarch64 휠이 Python 3.11·3.12·3.13 모두 존재 확인, 기존 pytest 16개 통과
+- [x] 1 `repeated_spike` 시나리오 (2026-10-27, 사용자 작성)
+  - `_fault_mA`: `6.0 if hours % 6 < 1 else 0.0` → 이상 시작 후 6시간마다 1시간씩 +6mA, 끝없이 반복
+  - 한 번 튐(`short_spike`, 주의 안 뜸)과 반복 튐(`repeated_spike`, 주의 떠야 함)으로 6번 작업의 양방향을 평가
+  - 검증: 3일 재생 시 2일째부터 하루 4회(00·06·12·18시) 튐, 이상 시작 전(1일째)엔 튐 없음, pytest 16개 통과
+
+## 12. 문제 기록
+
+| 날짜 | 문제 | 원인 | 해결 |
+|---|---|---|---|
+| 2026-10-25 | `pip install -e .` 실패 ("Getting requirements to build editable did not run successfully") | `pyproject.toml`이 `src/`에서 패키지를 찾는데 `src/leakmon/`이 아직 없었음 | 패키지 코드 작성 후 재설치 → 성공 |
+| 2026-10-25 | (미해결, 이후 단계) 가상 설비(`tools/virtual_devices.py`)의 이력은 Pi의 SQLite에 저장되지 않음 | 웹 이력 API가 디바이스 에이전트의 SQLite를 읽는 구조 | 가상 설비 추가 시 웹 서버가 수신 데이터를 저장할지 결정 필요 |
+| 2026-10-25 | 대시보드에 제목만 나오고 장치 패널이 안 나옴. 콘솔: `TypeError: Cannot read properties of null (reading 'getComputedStyle')` (`new Chart` ← `createPanel`) | `<template>`에서 복제한 요소는 화면 밖 문서 소속이라 `ownerDocument.defaultView`가 null. 화면에 붙이기 전에 `new Chart()`를 호출해 Chart.js 내부 `getComputedStyle`에서 실패 | `app.js`에서 패널을 먼저 `appendChild`한 뒤 차트 생성. (처음엔 CDN 로드 실패로 추정해 Chart.js를 `web/static/chart.umd.js` 로컬 사본으로 바꿨으나 원인 아니었음 — 오프라인 시연 대비로 로컬 사본은 유지) |
+| 2026-10-26 | 센서장애 복구 직후 샘플 1개로 곧바로 주의 전이 (거짓 경보) | 복구 시 지속 시간 타이머를 유지해, 데이터가 없던 장애 시간까지 D1/D2/R에 포함됨 | `state.py` 복구 시 타이머 3개 초기화. 테스트 `test_fault_gap_does_not_count_toward_duration` 추가 |
+| 2026-10-26 | 점수가 한 번에 T2를 넘으면 주의 후 D2보다 짧게(D2−D1) 점검권고 | `above_t2_since`가 정상 상태일 때부터 재기 시작 | 주의 진입 시 `above_t2_since`를 다시 설정 (사용자 확인: D2는 주의 진입부터). 테스트 `test_d2_counts_from_caution_entry` 추가 |
+| 2026-10-26 | 브로커가 끊긴 상태에서 디바이스 Ctrl+C 시 traceback, DB·MQTT 정리 안 됨 | paho 2.x는 발행 실패(`rc=NO_CONN`) 메시지에 `wait_for_publish()`를 호출하면 `RuntimeError` | `close()`에서 `info.rc == MQTT_ERR_SUCCESS`일 때만 대기 |
+| 2026-10-26 | 오프라인 디바이스에 ack를 누르면 조용히 유실, API는 항상 `sent: True` | 디바이스가 clean session이라 오프라인 중 cmd를 브로커가 보관하지 않음. publish 결과 미확인 | 서버: 오프라인이면 409, 발행 실패면 503. 화면: 점검권고 **이고 온라인**일 때만 ack 버튼 표시, 실패 시 알림창 |
+| 2026-10-26 | 센서장애 중 새로고침하면 상태 배지가 이전 상태로 표시 | 배지를 마지막 telemetry로만 정하는데, 센서장애 중엔 telemetry가 없음 | 마지막 알림이 마지막 telemetry보다 나중이면 알림의 상태로 배지 설정 |
+| 2026-10-26 | 서버 재시작이 3초 넘게 걸리면 대시보드가 브라우저 오류 화면에서 멈춤 | 끊김 3초 후 `reload()`를 한 번만 시도 | 서버가 응답할 때까지 3초 간격으로 확인한 뒤 새로고침 (`reloadWhenServerUp`) |
+| 2026-10-26 | 시나리오 테스트 `gradual_rise`가 `[주의, 점검권고]` 기대와 달리 주의↔정상을 반복 | 코드 결함 아님. 임계선 근처에서 하루 주기 정상 변동(가동 +0.4mA, 습도 ±0.4mA)이 T1을 오르내림. 습도·시간대를 모르는 고정 임계값의 실제 특성 | 테스트 기대를 "처음 주의, 최종 점검권고, 주의 반복 있음"으로 수정. 3단계 AI 비교 근거로 기록 |
+| 2026-10-26 | 2단계 코드로 `leakmon.main`을 실행했는데 대시보드가 갱신되지 않음 | 웹 서버(uvicorn)가 2단계 수정 전에 시작돼 옛 `app.py`로 동작 → `/api/devices`에 `scenarios`가 없음. 정적 파일(`app.js`)은 디스크에서 새로 읽혀 새 코드 → `scenarioLabels`가 `undefined`라 `addTelemetry`에서 `TypeError`, 모든 telemetry 처리 중단. MQTT·WebSocket 전달 자체는 정상이었음 | 웹 서버 재시작. 파이썬 코드 변경 후에는 웹 서버도 재시작해야 함 (개발 중엔 `--reload` 사용 가능) |
+| 2026-10-27 | 최신 `numpy==2.5.4`로 고정하면 Pi에 설치 못할 수 있음 | numpy 2.5는 Python 3.11 휠이 없음. Pi OS Bookworm은 Python 3.11 (Pi OS 버전 미확인) | `pip download --platform manylinux_2_28_aarch64 --python-version 3.11/3.12/3.13`으로 확인 후 `numpy==2.4.6`으로 고정 (3.11~3.13 모두 휠 있음) |

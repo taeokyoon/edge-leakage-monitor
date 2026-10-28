@@ -1,0 +1,6 @@
+# 설비 자산 정보 — 위치는 AI가 추정하지 않고 여기 등록된 값을 쓴다
+- device_id: press-01
+  building: A동
+  line: 2번 라인
+  equipment: 프레스-01
+  map_xy: [120, 80]   # 대시보드 배치도 좌표 (배치도는 이후 단계)

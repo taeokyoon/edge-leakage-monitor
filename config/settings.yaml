@@ -1,0 +1,28 @@
+# 동작 파라미터 (docs/ARCHITECTURE.md §5)
+hardware: sim            # sim | pi — 환경변수 LEAKMON_HW가 있으면 그 값이 우선
+device_id: press-01      # 이 장치의 ID (config/devices.yaml에 등록된 값)
+sample_period_s: 1.0     # 샘플 주기 (실제 시간, 초)
+time_scale: 1440         # 배속: 시연 1분 = 가상 운전 1일
+db_path: data/leakmon.db # 저장소 루트 기준 상대 경로
+
+mqtt:
+  host: localhost
+  port: 1883
+
+# 상태 머신: 임계값은 이상 점수 기준, 지속 시간은 "가상 시간(분)"
+# ×1440 배속에서 샘플 1개 = 가상 24분 → 120분은 샘플 5개 연속
+state:
+  t1: 0.5                # 주의 임계값
+  t2: 1.0                # 점검권고 임계값
+  d1_min: 120            # 주의 확정 지속 시간
+  d2_min: 240            # 점검권고 확정 지속 시간
+  recover_min: 120       # 주의 → 정상 회복 지속 시간
+  fault_after_min: 60    # 데이터 미수신 시 센서장애 판정 시간
+
+# 1단계 임시 점수 (고정 기준값): score = (측정 - normal) / (alarm - normal)
+baseline:
+  normal_mA: 4.5
+  alarm_mA: 9.0
+
+web:
+  port: 8000

@@ -1,0 +1,25 @@
+[project]
+name = "leakmon"
+version = "0.1.0"
+description = "누설전류 추세 감시 시스템 (저전압 PoC)"
+requires-python = ">=3.11"
+dependencies = [
+    "paho-mqtt>=2.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pyyaml>=6.0",
+    # 모델은 PC에서 학습해 Pi에서 불러오므로 버전을 정확히 고정 (버전이 다르면 로드를 보장하지 않음)
+    "scikit-learn==1.9.1",
+    "numpy==2.4.6",  # 2.5부터 Python 3.11 미지원 → Pi OS(3.11 또는 3.13) 어느 쪽이든 설치되도록
+]
+
+[project.optional-dependencies]
+# PC 전용: 테스트, 데이터셋 생성·학습·평가 도구
+dev = ["pytest>=8", "pandas>=3.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
