@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # PC 전용: 테스트, 데이터셋 생성·학습·평가 도구
-dev = ["pytest>=8", "pandas>=3.0"]
+dev = ["pytest>=8", "pandas>=3.0", "pytest-cov", "ruff", "mypy", "types-PyYAML"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -23,3 +23,22 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# 정적분석 (docs/TEST.md §3)
+[tool.ruff]
+line-length = 120  # 기존 코드가 한 줄에 주석을 붙이는 스타일이라 기본 88보다 넓게
+
+[tool.ruff.lint]
+# E 코딩 규칙, F 오류 패턴, B 버그 유발 패턴, SIM 단순화, UP 구문 최신화, S 보안(bandit 규칙)
+select = ["E", "F", "B", "SIM", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # pytest는 assert로 검증하므로 테스트 파일에서만 허용
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["paho.*"]
+ignore_missing_imports = true  # paho-mqtt에 타입 정보가 없을 때 대비
