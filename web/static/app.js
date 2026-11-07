@@ -73,11 +73,13 @@ function addTelemetry(t) {
   panel.runId = t.run_id;
   el.querySelector(".scenario").textContent = scenarioLabels[t.scenario] || t.scenario;
   el.querySelector(".leakage").textContent = `${t.leakage_mA.toFixed(2)} mA`;
-  el.querySelector(".expected").textContent = `${t.expected_mA.toFixed(2)} mA`;
+  // 학습 기간(AI가 아직 정상 패턴을 모름)에는 예상값이 없다
+  el.querySelector(".expected").textContent = t.expected_mA == null ? "학습 중" : `${t.expected_mA.toFixed(2)} mA`;
   el.querySelector(".humidity").textContent = `${t.humidity_pct.toFixed(1)} %`;
   el.querySelector(".score").textContent = t.anomaly_score.toFixed(2);
   el.querySelector(".ts").textContent = t.ts_virtual.replace("T", " ");
   setState(t.device_id, t.state);
+  if (t.learning) el.querySelector(".badge").textContent += " · 학습 중";
 
   chart.data.labels.push(t.ts_virtual.slice(5, 16).replace("T", " "));  // "MM-DD HH:MM"
   chart.data.datasets[0].data.push(t.leakage_mA);

@@ -4,6 +4,7 @@
 (순간 노이즈로 경보가 울리지 않게 하기 위함)
 점검권고는 웹 대시보드의 ack로만 정상으로 내려온다.
 데이터가 일정 시간 안 들어오면 어느 상태에서든 센서장애, 데이터가 다시 오면 이전 상태로 복귀.
+순간 튐(T1 초과가 D1을 못 채우고 끝남)은 경보 없이 기록하고, 일정 기간 안에 여러 번이면 주의 (SWR-ST-12).
 모든 시각(now)은 가상 시간 datetime이다.
 """
 from datetime import datetime, timedelta
@@ -23,11 +24,13 @@ def _since(started_at: datetime | None, condition: bool, now: datetime) -> datet
 
 class StateMachine:
     def __init__(self, t1: float, t2: float, d1: timedelta, d2: timedelta,
-                 recover: timedelta, fault_after: timedelta):
+                 recover: timedelta, fault_after: timedelta,
+                 spike_window: timedelta = timedelta(hours=24), spike_count: int = 3):
         self.t1, self.t2 = t1, t2
         self.d1, self.d2 = d1, d2
         self.recover = recover
         self.fault_after = fault_after
+        self.spike_window, self.spike_count = spike_window, spike_count
 
         self.state = NORMAL
         self.state_before_fault = NORMAL
@@ -36,12 +39,14 @@ class StateMachine:
         self.above_t1_since: datetime | None = None
         self.above_t2_since: datetime | None = None
         self.below_t1_since: datetime | None = None
+        self.spikes: list[datetime] = []  # 순간 튐 시작 시각 기록 (spike_window 안의 것만 유지)
 
     @classmethod
     def from_settings(cls, s: dict) -> "StateMachine":
         return cls(s["t1"], s["t2"],
                    timedelta(minutes=s["d1_min"]), timedelta(minutes=s["d2_min"]),
-                   timedelta(minutes=s["recover_min"]), timedelta(minutes=s["fault_after_min"]))
+                   timedelta(minutes=s["recover_min"]), timedelta(minutes=s["fault_after_min"]),
+                   timedelta(minutes=s["spike_window_min"]), s["spike_count"])
 
     def update(self, now: datetime, score: float | None) -> str:
         """샘플 하나를 반영하고 현재 상태를 돌려준다. score=None은 데이터 미수신."""
@@ -62,20 +67,28 @@ class StateMachine:
             self.state = self.state_before_fault
             self.above_t1_since = self.above_t2_since = self.below_t1_since = None
 
-        # 3) 조건별 지속 시작 시각 갱신
+        # 3) 순간 튐: T1 초과가 D1을 못 채우고 끝나면 기록. 주의 중에도 기록해야 반복이 계속되는 동안 주의를 유지한다
+        if (self.state in (NORMAL, CAUTION) and self.above_t1_since is not None and score <= self.t1
+                and now - self.above_t1_since < self.d1):
+            self.spikes.append(self.above_t1_since)
+        self.spikes = [t for t in self.spikes if now - t <= self.spike_window]
+
+        # 4) 조건별 지속 시작 시각 갱신
         self.above_t1_since = _since(self.above_t1_since, score > self.t1, now)
         self.above_t2_since = _since(self.above_t2_since, score > self.t2, now)
         self.below_t1_since = _since(self.below_t1_since, score <= self.t1, now)
 
-        # 4) 지속 시간을 채웠을 때만 전이
-        if self.state == NORMAL and self._held(self.above_t1_since, self.d1, now):
+        # 5) 지속 시간을 채웠거나 순간 튐이 반복됐을 때만 전이
+        repeated_spikes = len(self.spikes) >= self.spike_count
+        if self.state == NORMAL and (self._held(self.above_t1_since, self.d1, now) or repeated_spikes):
             self.state = CAUTION
             # D2는 "주의 상태에서" 유지된 시간이므로 주의 진입 시점부터 다시 잰다
             self.above_t2_since = now if score > self.t2 else None
         elif self.state == CAUTION:
             if self._held(self.above_t2_since, self.d2, now):
                 self.state = INSPECT
-            elif self._held(self.below_t1_since, self.recover, now):
+            elif self._held(self.below_t1_since, self.recover, now) and not repeated_spikes:
+                # 튐이 24시간 안에 3회 이상인 동안은 회복하지 않는다 (고객 결정 B안)
                 self.state = NORMAL
         return self.state
 
@@ -85,6 +98,7 @@ class StateMachine:
             return False
         self.state = NORMAL
         self.above_t1_since = self.above_t2_since = None  # D1 재적용
+        self.spikes = []  # 순간 튐도 처음부터 다시 센다
         return True
 
     @staticmethod

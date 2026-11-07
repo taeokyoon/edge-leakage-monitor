@@ -18,11 +18,20 @@ state:
   d2_min: 240            # 점검권고 확정 지속 시간
   recover_min: 120       # 주의 → 정상 회복 지속 시간
   fault_after_min: 60    # 데이터 미수신 시 센서장애 판정 시간
+  spike_window_min: 1440 # 순간 튐 반복 판정 기간 (TBD-01 결정: 24시간)
+  spike_count: 3         # 기간 안에 이 횟수 이상이면 주의 (TBD-01 결정: 3회)
 
 # 1단계 임시 점수 (고정 기준값): score = (측정 - normal) / (alarm - normal)
 baseline:
   normal_mA: 4.5
   alarm_mA: 9.0
+
+# 3단계 AI (선형 회귀 + 잔차). 아래 두 값은 임시값
+ai:
+  method: linear         # linear = 선형 회귀 + 잔차 (제안) | baseline = 고정 임계값 (비교용)
+  model_path: models/linear.json  # 학습 결과 저장 위치 (SYS-15a)
+  learn_days: 1          # 학습 기간 (TBD-02). 모든 시나리오의 첫 1일이 정상이라 1일로 시작
+  sigma_scale: 10        # 점수 1.0 = 잔차가 σ의 10배 (TBD-04: T1·T2를 그대로 쓰면 주의 5σ, 점검권고 10σ)
 
 web:
   port: 8000

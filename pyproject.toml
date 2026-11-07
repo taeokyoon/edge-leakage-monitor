@@ -40,5 +40,5 @@ python_version = "3.12"
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["paho.*"]
-ignore_missing_imports = true  # paho-mqtt에 타입 정보가 없을 때 대비
+module = ["paho.*", "sklearn.*"]
+ignore_missing_imports = true  # paho-mqtt·scikit-learn에 타입 정보가 없을 때 대비

@@ -29,6 +29,10 @@ SCENARIOS = {
     "data_loss": "데이터 끊김",
 }
 
+# 평가 라벨 (3단계 작업 2): 이상 시작(EVENT_START) 뒤에 경보(주의 이상)가 떠야 정답인 시나리오.
+# 나머지에서 경보가 뜨면 오경보 (humidity_rise = STK-02, short_spike = STK-03). data_loss는 센서장애로 따로 본다
+ALARM_EXPECTED = {"gradual_rise", "repeated_spike", "sharp_rise"}
+
 
 def normal_leakage(humidity_pct: float, hour: float) -> float:
     """습도를 반영한 합성 정상 변동: 정상 설비라면 누설전류가 이 값 근처에 있다."""
@@ -76,3 +80,20 @@ class Scenario:
         if self.name == "sharp_rise":
             return min(2.0 * hours, 7.0)        # 시간당 2mA 상승, 최대 +7mA에서 유지
         return 0.0
+
+
+def generate(name: str, days: float, seed: int = 0, step: timedelta = timedelta(minutes=24),
+             start: datetime = datetime(2026, 11, 1)) -> list[dict]:
+    """시나리오를 step 간격으로 days일 재생한 데이터셋. 기본 step 24분 = 실제 1초 × 배속 1440 (SYS-01).
+
+    각 행: ts(가상 시각), leakage_mA·humidity_pct(데이터 끊김이면 None), anomaly(평가 라벨)
+    """
+    scenario = Scenario(name, start, seed)
+    rows = []
+    now = start
+    while now < start + timedelta(days=days):
+        reading = scenario.sample(now) or {"leakage_mA": None, "humidity_pct": None}
+        rows.append({"ts": now, "leakage_mA": reading["leakage_mA"], "humidity_pct": reading["humidity_pct"],
+                     "anomaly": name in ALARM_EXPECTED and now - start > EVENT_START})
+        now += step
+    return rows

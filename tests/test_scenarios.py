@@ -4,10 +4,11 @@
 """
 from datetime import datetime, timedelta
 
-from leakmon.ai.baseline import fixed_threshold_score
+from leakmon import evaluation
 from leakmon.config import load_settings
-from leakmon.scenario import Scenario
-from leakmon.state import CAUTION, FAULT, INSPECT, NORMAL, StateMachine
+from leakmon.evaluation import transitions
+from leakmon.scenario import Scenario, generate
+from leakmon.state import CAUTION, FAULT, INSPECT, NORMAL
 
 START = datetime(2026, 11, 1)
 STEP = timedelta(minutes=24)  # ×1440 배속에서 1초 샘플 = 가상 24분
@@ -15,20 +16,13 @@ SETTINGS = load_settings()
 
 
 def replay(name: str, days: float, seed: int = 0) -> list[tuple[timedelta, str]]:
-    """시나리오를 days일 동안 재생하고 상태 전이 목록 [(시작 후 경과, 새 상태)]을 돌려준다."""
-    scenario = Scenario(name, START, seed)
-    machine = StateMachine.from_settings(SETTINGS["state"])
-    normal_mA, alarm_mA = SETTINGS["baseline"]["normal_mA"], SETTINGS["baseline"]["alarm_mA"]
-    transitions = []
-    now = START
-    while now < START + timedelta(days=days):
-        reading = scenario.sample(now)
-        score = None if reading is None else fixed_threshold_score(reading["leakage_mA"], normal_mA, alarm_mA)
-        before = machine.state
-        if machine.update(now, score) != before:
-            transitions.append((now - START, machine.state))
-        now += STEP
-    return transitions
+    """고정 임계값으로 재생한 상태 전이 목록 [(시작 후 경과, 새 상태)]"""
+    return transitions(evaluation.replay(name, days, SETTINGS, "baseline", seed))
+
+
+def replay_ai(name: str, days: float, seed: int = 0) -> list[tuple[timedelta, str]]:
+    """AI(선형 회귀 + 잔차)로 재생. 처음 learn_days일은 학습 기간"""
+    return transitions(evaluation.replay(name, days, SETTINGS, "linear", seed))
 
 
 def states(transitions):
@@ -72,3 +66,47 @@ def test_same_seed_same_data():
     b = Scenario("gradual_rise", START, seed=1)
     times = [START + STEP * i for i in range(50)]
     assert [a.sample(t) for t in times] == [b.sample(t) for t in times]
+
+
+# ── 3단계 AI (선형 회귀 + 잔차): 같은 시나리오를 baseline과 나란히 비교 ──
+
+def test_ai_1_normal_has_no_alert():
+    assert replay_ai("normal", 7) == []
+
+
+def test_ai_2_gradual_rise_detected_earlier_than_baseline():
+    ai, base = replay_ai("gradual_rise", 14), replay("gradual_rise", 14)
+    assert states(ai) == [CAUTION, INSPECT]  # 습도·시간대를 빼고 보므로 주의↔정상 반복이 없다
+    assert ai[0][0] < base[0][0] - timedelta(days=2)  # baseline보다 2일 이상 먼저 주의
+
+
+def test_ai_3_humidity_rise_is_not_false_alarm():
+    # baseline은 주의(오경보)를 내지만 AI는 습도 영향을 예측에 포함하므로 경보 없음 (STK-02)
+    assert replay_ai("humidity_rise", 7) == []
+
+
+def test_ai_4_short_spike_is_suppressed():
+    assert replay_ai("short_spike", 3) == []
+
+
+def test_ai_5_sharp_rise_goes_inspect_within_a_day():
+    t = replay_ai("sharp_rise", 3)
+    assert states(t) == [CAUTION, INSPECT] and t[1][0] < timedelta(days=2)
+
+
+def test_ai_6_data_loss_goes_fault_and_recovers():
+    assert states(replay_ai("data_loss", 3)) == [FAULT, NORMAL]
+
+
+def test_dataset_labels():
+    # 평가 라벨: 경보가 정답인 시나리오만, 이상 시작(1일) 뒤부터 anomaly
+    rows = generate("gradual_rise", 2, step=timedelta(hours=1))
+    assert not any(r["anomaly"] for r in rows[:25]) and all(r["anomaly"] for r in rows[25:])
+    assert not any(r["anomaly"] for r in generate("humidity_rise", 3))
+
+
+def test_repeated_spike_goes_caution_and_stays():
+    # 6시간마다 1시간 튐 → 세 번째 튐이 끝나면 주의, 튐이 계속되는 동안 주의 유지 (STK-11, SYS-07, B안)
+    # baseline·AI 모두
+    for t in (replay("repeated_spike", 7), replay_ai("repeated_spike", 7)):
+        assert states(t) == [CAUTION] and t[0][0] < timedelta(days=2)
