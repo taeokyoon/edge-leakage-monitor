@@ -5,9 +5,11 @@ sample_period_s: 1.0     # 샘플 주기 (실제 시간, 초)
 time_scale: 1440         # 배속: 시연 1분 = 가상 운전 1일
 db_path: data/leakmon.db # 저장소 루트 기준 상대 경로
 
+# 4단계 보안: TLS + 계정 (bash broker/setup.sh로 인증서·계정 생성, mosquitto -c broker/mosquitto.conf로 실행)
 mqtt:
-  host: localhost
-  port: 1883
+  host: localhost        # 인증서 SAN에 있는 이름이어야 함 (localhost, 이 PC/Pi 이름, 127.0.0.1)
+  port: 8883
+  ca_file: broker/certs/ca.crt  # 브로커 인증서를 확인할 CA (저장소 루트 기준)
 
 # 상태 머신: 임계값은 이상 점수 기준, 지속 시간은 "가상 시간(분)"
 # ×1440 배속에서 샘플 1개 = 가상 24분 → 120분은 샘플 5개 연속

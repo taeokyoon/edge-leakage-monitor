@@ -103,7 +103,7 @@
 - [x] 2단계: 시나리오 생성기(배속), 고정 임계값 baseline (2026-10-26)
 - [x] 3단계: AI 모델 학습·평가, 지표 산출 (2026-11-07, 미결: TBD-02 학습 기간, TBD-04 점수 기준, TBD-05 합격 기준, IF 보정)
 - [ ] 검증 트랙 (2026-11-03~, 역할: AI 개발자 / 사용자 SW검증 테스터, 상세는 `docs/TEST.md`)
-- [ ] 4단계: TLS·ID/비밀번호·ACL, 보안 시연
+- [x] 4단계: TLS·ID/비밀번호·ACL, 보안 시연 (2026-11-07)
 - [ ] 5단계: Pi 실제 하드웨어 연결 (ADS1115, MCP4725, DHT20, OLED, LED, 버튼)
 - [ ] 6단계: 통합, 시연 영상, 보고서
 
@@ -111,15 +111,20 @@
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # 최초 1회
-.venv/bin/pytest -q                                          # 상태 머신 테스트
-# 터미널 1: 웹 서버 (저장소 루트에서)
+bash broker/setup.sh                                         # 최초 1회: 인증서·계정 생성 (git 제외 파일)
+.venv/bin/pytest -q                                          # 전체 테스트 (보안 테스트는 브로커가 떠 있을 때만)
+# 터미널 1: 보안 브로커 (TLS 8883, 계정, ACL)
+mosquitto -c broker/mosquitto.conf
+# 터미널 2: 웹 서버 (저장소 루트에서)
 .venv/bin/uvicorn web.app:app --host 0.0.0.0 --port 8000
-# 터미널 2: 디바이스 에이전트 (--scenario 생략 시 normal, 이상은 시작 후 가상 1일부터)
-#   normal | gradual_rise | humidity_rise | short_spike | sharp_rise | data_loss
+# 터미널 3: 디바이스 에이전트 (--scenario 생략 시 normal, 이상은 시작 후 가상 1일부터, 처음 1일은 AI 학습 기간)
+#   normal | gradual_rise | humidity_rise | short_spike | repeated_spike | sharp_rise | data_loss
 .venv/bin/python -m leakmon.main --scenario sharp_rise
 # 브라우저: http://localhost:8000
+.venv/bin/python tools/evaluate.py                           # 방식 3종 평가 지표
+.venv/bin/pytest -v -s tests/test_security.py                # 보안 시연 (브로커 실행 중일 때)
 ```
-- 브로커: 로컬 Mosquitto `localhost:1883` (1단계는 평문·익명, 4단계에서 TLS·인증·ACL)
+- 브로커: 4단계부터 `broker/mosquitto.conf`로 따로 띄운다. 시스템 Mosquitto(1883, 평문·익명)는 쓰지 않는다
 
 ## 11. 단계별 진행 기록
 
@@ -267,6 +272,24 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # 최초 1회
     - repeated_spike: 학습 60개, telemetry learning true 60개, 학습 중 예상값 NULL 60개, 순간 튐 alert DB 저장 확인
     - pytest 42개, `node --check app.js` 통과, ruff·mypy 새 경고 없음
 
+### 4단계: 보안 (2026-11-07) — 완료
+- `broker/mosquitto.conf`: TLS 8883만 열기(평문 없음), `allow_anonymous false`, `password_file`, `acl_file`, debug 로그(거부 기록)
+- `broker/acl`: web = 전체 구독 + `+/cmd` 발행만, 장치 = `pattern`으로 `%u`(= device_id) 자기 토픽만 (mosquitto 문서 Context7 확인)
+- `broker/setup.sh`: 자체 서명 CA → 서버 인증서(SAN: localhost, 호스트 이름, 127.0.0.1), 계정별 무작위 비밀번호
+  → `broker/passwd`(해시), `config/secrets.yaml`(평문, 600). 인증서·비밀번호는 `.gitignore`
+- `mqtt_client.make_client()`: TLS(`tls_set(ca_certs)`) + `username_pw_set` (paho 문서 Context7 확인). 장치·웹 서버·테스트 공용
+  - 접속 거부 시 콘솔에 이유 출력 (`reason_code.is_failure`)
+- 보안 시연 = `tests/test_security.py` 7개 (브로커 없으면 건너뜀)
+  1. 평문 접속 → 응답 없음 (브로커 로그: SSL wrong version number)
+  2. 틀린 비밀번호 → `Not authorized`
+  3. press-01 정상 접속 → `Success` (대조군)
+  4. press-01 → 자기 alert 발행 → web 수신 1건 (대조군)
+  5. press-01 → press-02 alert 발행(위조) → PUBACK `Not authorized`, web 수신 0건, 브로커 로그 `Denied PUBLISH from press-01`
+  6. web → press-01 telemetry 발행(위조) → `Not authorized`
+  7. web → press-01 cmd(ack) → 장치 수신 (대조군)
+- 검증: 보안 7개 통과, 전체 49개 통과, TLS로 웹 서버(8001)·에이전트 e2e (`/api/devices` online, 이력 조회)
+- mTLS(클라이언트 인증서)는 확장 범위라 하지 않음
+
 ### 검증 트랙 (2026-11-03~)
 - 역할 변경: AI = 개발자, 사용자 = SW검증 테스터 (V-모델: 지금은 구현 단계 ↔ 단위 테스트·정적분석)
 - 순서 (2026-11-04 재정렬, 실무 V-모델 순서): 0 요구사항 명세서(SRS) 작성·리뷰 → 1 요구사항 ID·추적표 → 2 정적분석 도구
@@ -310,3 +333,9 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # 최초 1회
    - 문제 - 학습 기간 2~3일로 바꿔 보니 습도 상승 오경보가 0이 되어 좋아 보였음
    - 원인 - 시나리오의 정상 구간이 1일뿐이라, 학습 데이터에 이상·습도 상승 구간이 섞인 무효 실험이었음
    - 해결 - `evaluation.replay()`가 learn_days > 정상 구간이면 오류를 내도록 막음. 학습 기간 비교는 시나리오 정상 구간을 늘린 뒤 다시
+
+3.
+   - 날짜 - 2026-11-07
+   - 문제 - 인증서 개인 키 폴더(`broker/certs/`)가 git 제외가 안 되고 있었음 (커밋 전에 발견)
+   - 원인 - `.gitignore` 마지막 줄(`.coverage`)에 줄바꿈이 없는 채로 새 줄을 덧붙여 `.coveragebroker/certs/` 한 줄로 합쳐짐
+   - 해결 - 두 줄로 분리하고 `git status --ignored`로 certs·passwd·secrets.yaml이 제외(!!)되는지 확인

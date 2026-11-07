@@ -15,7 +15,17 @@ def load_settings() -> dict:
     # PC는 LEAKMON_HW=sim, Pi는 LEAKMON_HW=pi (환경변수가 파일보다 우선)
     settings["hardware"] = os.environ.get("LEAKMON_HW", settings["hardware"])
     settings["db_path"] = str(ROOT_DIR / settings["db_path"])
+    settings["mqtt"]["ca_file"] = str(ROOT_DIR / settings["mqtt"]["ca_file"])
     return settings
+
+
+def load_secrets() -> dict:
+    """MQTT 계정 → 비밀번호 (broker/setup.sh가 만든 config/secrets.yaml, git 제외)."""
+    path = CONFIG_DIR / "secrets.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} 없음 — 저장소 루트에서 bash broker/setup.sh 를 먼저 실행")
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
 def load_devices() -> dict:

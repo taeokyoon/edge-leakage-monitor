@@ -45,7 +45,7 @@ def run(scenario_name: str) -> None:
     sensors = make_sensors(settings["hardware"], Scenario(scenario_name, virtual_start))
     machine = StateMachine.from_settings(settings["state"])
     db = storage.connect(settings["db_path"])
-    mqtt = DeviceMqtt(device_id, settings["mqtt"]["host"], settings["mqtt"]["port"])
+    mqtt = DeviceMqtt(device_id, settings["mqtt"])
 
     # 가상 시간 = 가상 시작 시각 + 경과 실제 시간 × 배속
     real_start = time.monotonic()

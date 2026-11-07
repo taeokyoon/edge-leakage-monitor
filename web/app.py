@@ -12,11 +12,10 @@ import paho.mqtt.client as mqtt
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from paho.mqtt.enums import CallbackAPIVersion
 
 from leakmon import storage
 from leakmon.config import load_devices, load_settings
-from leakmon.mqtt_client import topic
+from leakmon.mqtt_client import make_client, topic
 from leakmon.scenario import SCENARIOS
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -40,6 +39,9 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
 
     def on_connect(client, userdata, flags, reason_code, properties):
+        if reason_code.is_failure:
+            print(f"[web] 브로커 접속 거부: {reason_code}")
+            return
         client.subscribe("factory/leakage/#", qos=1)
 
     def on_message(client, userdata, msg):
@@ -59,7 +61,7 @@ async def lifespan(app: FastAPI):
         # 브라우저 전송은 asyncio 루프의 일이므로 스레드 안전하게 넘긴다
         asyncio.run_coroutine_threadsafe(broadcast(message), loop)
 
-    client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id="web")
+    client = make_client("web", settings["mqtt"])  # TLS + web 계정 (ACL: 전체 구독, cmd 발행만)
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect(settings["mqtt"]["host"], settings["mqtt"]["port"])

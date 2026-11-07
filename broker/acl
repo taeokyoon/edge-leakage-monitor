@@ -1,0 +1,12 @@
+# 토픽 권한 (최소 권한, docs/ARCHITECTURE.md 4장). 목록에 없는 토픽은 모두 거부된다
+
+# 웹 서버: 전체 구독 + 장치 명령(ack) 발행만. telemetry·alert는 발행 못 함 (위조 불가)
+user web
+topic read factory/leakage/#
+topic write factory/leakage/+/cmd
+
+# 장치: %u = 접속한 사용자명 = device_id. 자기 토픽에만 발행, 자기 cmd만 구독
+pattern write factory/leakage/%u/telemetry
+pattern write factory/leakage/%u/alert
+pattern write factory/leakage/%u/status
+pattern read factory/leakage/%u/cmd

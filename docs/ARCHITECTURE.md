@@ -182,8 +182,8 @@ leakmon/
 │   └── static/              # index.html, app.js, 배치도
 ├── broker/
 │   ├── mosquitto.conf
-│   ├── acl.example
-│   └── make_certs.sh        # 자체 서명 CA·서버 인증서 생성 (키는 커밋 금지)
+│   ├── acl                # 토픽 권한 (비밀 아님)
+│   ├── setup.sh           # 인증서·계정 생성 (결과물은 git 제외)
 ├── tools/
 │   ├── gen_dataset.py       # 합성 시나리오 데이터셋 생성
 │   ├── evaluate.py          # 지표 산출 (AI vs baseline)
