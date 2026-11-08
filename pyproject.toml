@@ -35,6 +35,13 @@ select = ["E", "F", "B", "SIM", "UP", "S"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]  # pytest는 assert로 검증하므로 테스트 파일에서만 허용
 
+# 커버리지 (docs/TEST.md 5장): 테스터 결정(2026-11-08)으로 분기 커버리지 측정
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+fail_under = 49  # 전체 하한선 (A안): 2026-11-08 측정값. 테스트를 늘릴 때마다 올려서 100%를 향한다
+
 [tool.mypy]
 python_version = "3.12"
 warn_unused_configs = true

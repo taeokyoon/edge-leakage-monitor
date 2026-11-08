@@ -41,8 +41,10 @@ def connect(db_path: str) -> sqlite3.Connection:
 
 def save_telemetry(conn: sqlite3.Connection, t: dict) -> None:
     conn.execute(
-        "INSERT INTO telemetry (device_id, run_id, ts_virtual, leakage_mA, humidity_pct, expected_mA, anomaly_score, state)"
-        " VALUES (:device_id, :run_id, :ts_virtual, :leakage_mA, :humidity_pct, :expected_mA, :anomaly_score, :state)", t)
+        "INSERT INTO telemetry"
+        " (device_id, run_id, ts_virtual, leakage_mA, humidity_pct, expected_mA, anomaly_score, state)"
+        " VALUES (:device_id, :run_id, :ts_virtual, :leakage_mA, :humidity_pct, :expected_mA, :anomaly_score, :state)",
+        t)
     conn.commit()
 
 
@@ -61,7 +63,10 @@ def latest_run_id(conn: sqlite3.Connection, device_id: str) -> str | None:
 
 def recent_rows(conn: sqlite3.Connection, table: str, device_id: str, run_id: str, limit: int) -> list[dict]:
     """해당 실행의 최근 limit개를 시간 순서(오래된 것 먼저)로 돌려준다."""
-    assert table in ("telemetry", "alerts")  # 테이블 이름은 SQL 파라미터로 못 넘기므로 화이트리스트
-    rows = conn.execute(f"SELECT * FROM {table} WHERE device_id = ? AND run_id = ? ORDER BY id DESC LIMIT ?",
+    # 테이블 이름은 SQL 파라미터로 못 넘기므로 화이트리스트 (assert는 python -O에서 사라지므로 if로 검사, SA-02)
+    if table not in ("telemetry", "alerts"):
+        raise ValueError(f"허용되지 않은 테이블: {table}")
+    # SA-03 오탐: table은 바로 위 화이트리스트 값만 들어오고, 외부 입력(device_id 등)은 ? 파라미터로 넘긴다
+    rows = conn.execute(f"SELECT * FROM {table} WHERE device_id = ? AND run_id = ? ORDER BY id DESC LIMIT ?",  # noqa: S608
                         (device_id, run_id, limit)).fetchall()
     return [dict(r) for r in reversed(rows)]

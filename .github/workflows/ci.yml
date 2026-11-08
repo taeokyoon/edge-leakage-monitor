@@ -26,4 +26,8 @@ jobs:
         run: mypy src
 
       - name: Test (pytest)
-        run: pytest --cov=leakmon
+        run: pytest --cov=leakmon --cov=web
+
+      # 핵심 판정 로직은 분기 100% 유지 (테스터 결정 A안, docs/TEST.md 5장). 위 단계가 만든 .coverage를 다시 읽는다
+      - name: Coverage gate (state.py 100%)
+        run: coverage report --include=src/leakmon/state.py --fail-under=100

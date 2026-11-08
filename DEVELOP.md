@@ -302,7 +302,11 @@ mosquitto -c broker/mosquitto.conf
 - [x] 1 `state.py` 요구사항 REQ-ST-01~11, 기존 테스트 추적표 작성 (`docs/TEST.md` 1~2장)
 - [x] 2 ruff·mypy·pytest-cov 설치, `pyproject.toml`에 설정 (Context7로 설정 문법 확인)
   - 1차 결과: ruff 6건, mypy 1건, 전체 분기 커버리지 49% (`state.py` 100%) → `docs/TEST.md` 4~5장
-- [ ] 3 정적분석 결과 판정 (테스터)
+- [x] 3 정적분석 결과 판정 (테스터, 2026-11-08): SA-02·05 결함 → 수정, SA-01·03·04 오탐 → 해당 줄만 경고 끄고 이유 주석
+  - 재실행: ruff 0건, mypy 0건, pytest 44 passed / 7 skipped → CI 3단계 모두 통과 (`docs/TEST.md` 4장)
+- [x] 5 커버리지 기준 결정 (테스터, 2026-11-08, A안): 범위 `src/leakmon` + `web`, 분기 커버리지, `state.py` 100% + 전체 하한선 49%
+  - CI에 `state.py` 100% 게이트 단계 추가, 대조군 2개로 게이트가 실제로 막는 것 확인 (`docs/TEST.md` 5-1)
+- [ ] 6 0% 파일 테스트 추가 → 전체 하한선 상향 (`storage.py`, `sensors/`, `web/app.py`, `main.py`)
 
 ## 12. 문제 기록
 

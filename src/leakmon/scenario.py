@@ -46,7 +46,8 @@ class Scenario:
             raise ValueError(f"알 수 없는 시나리오: {name} (가능: {', '.join(SCENARIOS)})")
         self.name = name
         self.start = start
-        self.rng = random.Random(seed)  # seed 고정 → 노이즈까지 재현 가능
+        # SA-04 오탐: 보안용이 아니라 시뮬레이션 재현용 난수 (seed 고정 → 노이즈까지 재현 가능)
+        self.rng = random.Random(seed)  # noqa: S311
 
     def sample(self, now: datetime) -> dict | None:
         """가상 시각 now의 측정값. 데이터 끊김 구간이면 None (센서 장애)."""

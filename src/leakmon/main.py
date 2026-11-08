@@ -99,7 +99,9 @@ def run(scenario_name: str) -> None:
                     "ts_virtual": ts_virtual, "time_scale": time_scale,
                     "leakage_mA": reading["leakage_mA"], "humidity_pct": reading["humidity_pct"],
                     "expected_mA": None if expected_mA is None else round(expected_mA, 3),
-                    "anomaly_score": round(score, 3), "state": state, "source": reading["source"],
+                    # SA-01 오탐: score가 None인 경우는 reading이 None일 때뿐이라 이 if 안에서는 항상 float
+                    "anomaly_score": round(score, 3),  # type: ignore[arg-type]
+                    "state": state, "source": reading["source"],
                     "learning": learning,
                 }
                 storage.save_telemetry(db, telemetry)
@@ -128,6 +130,7 @@ def run(scenario_name: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="leakmon 디바이스 에이전트")
+    scenario_list = ", ".join(f"{k}={v}" for k, v in SCENARIOS.items())
     parser.add_argument("--scenario", choices=SCENARIOS, default="normal",
-                        help="시나리오 (이상은 시작 후 가상 1일부터): " + ", ".join(f"{k}={v}" for k, v in SCENARIOS.items()))
+                        help=f"시나리오 (이상은 시작 후 가상 1일부터): {scenario_list}")
     run(parser.parse_args().scenario)
