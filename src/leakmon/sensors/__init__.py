@@ -5,11 +5,13 @@ read() 반환값: {"leakage_mA": float, "humidity_pct": float, "source": str}
                읽기 실패(센서 장애)면 None
 """
 from ..scenario import Scenario
+from .pi import PiSensors
 from .sim import SimSensors
 
 
-def make_sensors(hardware: str, scenario: Scenario):
+def make_sensors(hardware: str, scenario: Scenario, pi_settings: dict | None = None):
     if hardware == "sim":
         return SimSensors(scenario)
-    # Pi 실제 하드웨어(시나리오 → MCP4725 출력 → ADS1115·DHT20 읽기)는 5단계에서 추가
+    if hardware == "pi":  # 시나리오 → MCP4725 출력 → ADS1115·DHT20 읽기 (sensors/pi.py)
+        return PiSensors(scenario, pi_settings)
     raise NotImplementedError(f"하드웨어 백엔드 '{hardware}'는 아직 구현되지 않았습니다")

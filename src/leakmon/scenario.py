@@ -49,15 +49,21 @@ class Scenario:
         # SA-04 오탐: 보안용이 아니라 시뮬레이션 재현용 난수 (seed 고정 → 노이즈까지 재현 가능)
         self.rng = random.Random(seed)  # noqa: S311
 
-    def sample(self, now: datetime) -> dict | None:
-        """가상 시각 now의 측정값. 데이터 끊김 구간이면 None (센서 장애)."""
+    def sample(self, now: datetime, humidity_pct: float | None = None) -> dict | None:
+        """가상 시각 now의 측정값. 데이터 끊김 구간이면 None (센서 장애).
+
+        humidity_pct: 실측 습도(Pi DHT20). 주면 합성 습도 대신 이 값으로 정상 누설전류를 계산한다
+                      → 실제 습도 변화가 누설전류에 반영된다 (humidity_rise의 합성 상승은 쓰지 않음)
+        """
         since_event = now - self.start - EVENT_START  # 음수면 아직 이상 시작 전
         hour = now.hour + now.minute / 60
 
         if self.name == "data_loss" and timedelta(0) <= since_event < timedelta(hours=3):
             return None
 
-        humidity = self._humidity(hour, since_event) + self.rng.gauss(0, 0.3)
+        humidity = self._humidity(hour, since_event) + self.rng.gauss(0, 0.3)  # 실측을 써도 난수 순서는 유지
+        if humidity_pct is not None:
+            humidity = humidity_pct
         leakage = normal_leakage(humidity, hour) + self._fault_mA(since_event) + self.rng.gauss(0, 0.05)
         return {"leakage_mA": round(leakage, 3), "humidity_pct": round(humidity, 1), "source": "sim"}
 

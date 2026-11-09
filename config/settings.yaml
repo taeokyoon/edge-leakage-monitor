@@ -35,5 +35,12 @@ ai:
   learn_days: 1          # 학습 기간 (TBD-02). 모든 시나리오의 첫 1일이 정상이라 1일로 시작
   sigma_scale: 10        # 점수 1.0 = 잔차가 σ의 10배 (TBD-04: T1·T2를 그대로 쓰면 주의 5σ, 점검권고 10σ)
 
+# 5단계 Pi 하드웨어 (hardware: pi 일 때만 사용, sensors/pi.py)
+pi:
+  i2c_bus: 1
+  leakage_input: dac     # dac = 시나리오 → MCP4725 → ADS1115 A1 (AI 지표 기준) | pot = 가변저항 → A2 (수동 시연)
+  humidity: dht20        # dht20 = 실측 습도로 정상 누설전류 계산 (시연, 학습 중 입김 1회) | scenario = 합성 습도 (AI 지표)
+  mA_per_V: 5.0          # 1V = 5mA (0.2V/mA). DAC 최대 3.3V = 16.5mA, 시나리오 최대 약 12mA
+
 web:
   port: 8000

@@ -42,7 +42,7 @@ def run(scenario_name: str) -> None:
     virtual_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     # 실행 구분용 ID: 실행마다 가상 시간이 처음부터 다시 시작하므로 웹은 최신 실행만 보여 준다
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
-    sensors = make_sensors(settings["hardware"], Scenario(scenario_name, virtual_start))
+    sensors = make_sensors(settings["hardware"], Scenario(scenario_name, virtual_start), settings.get("pi"))
     machine = StateMachine.from_settings(settings["state"])
     db = storage.connect(settings["db_path"])
     mqtt = DeviceMqtt(device_id, settings["mqtt"])
