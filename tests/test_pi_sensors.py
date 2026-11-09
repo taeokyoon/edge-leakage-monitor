@@ -14,8 +14,9 @@ START = datetime(2026, 11, 8)
 class FakeBus:
     """MCP4725 출력 전압이 ADS1115 A1에 연결된 배선 + A2에 고정 전압(가변저항)."""
 
-    def __init__(self, pot_volts: float = 1.0, broken: bool = False):
+    def __init__(self, pot_volts: float = 1.0, broken: bool = False, a1_floating_volts: float | None = None):
         self.dac_volts = 0.0
+        self.a1_floating_volts = a1_floating_volts  # A1 선이 빠졌을 때 떠 있는 핀 전압
         self.pot_volts = pot_volts
         self.channel = "A1"
         self.broken = broken
@@ -29,7 +30,10 @@ class FakeBus:
             self.channel = "A1" if data[0] == 0xD3 else "A2"
 
     def read_i2c_block_data(self, addr, reg, length):
-        volts = self.dac_volts if self.channel == "A1" else self.pot_volts
+        if self.channel == "A1":
+            volts = self.dac_volts if self.a1_floating_volts is None else self.a1_floating_volts
+        else:
+            volts = self.pot_volts
         raw = round(volts / 4.096 * 32768)
         return [(raw >> 8) & 0xFF, raw & 0xFF]
 
@@ -100,3 +104,30 @@ def test_dht20_failure_is_sensor_fault(monkeypatch):
         raise OSError("DHT20 측정 미완료")
     monkeypatch.setattr(sensors, "_read_dht20", broken)
     assert sensors.read(START) is None
+
+
+def test_unplugged_a1_is_sensor_fault(capsys):
+    """Pi 실측(2026-11-09): A1 선을 빼면 떠 있는 핀이 약 3mA(0.6V)로 읽힘 → 자가진단으로 센서 장애."""
+    sensors = PiSensors(Scenario("sharp_rise", START), bus=FakeBus(a1_floating_volts=0.6))
+    assert sensors.read(START + timedelta(days=1, hours=6)) is None  # 출력 약 12mA, 측정 3mA
+    assert "DAC→ADC 불일치" in capsys.readouterr().out
+
+
+def test_loopback_tolerates_normal_error():
+    """정상 오차(0.05mA 수준)는 통과."""
+    bus = FakeBus()
+    sensors = PiSensors(Scenario("normal", START), bus=bus)
+    original = bus.read_i2c_block_data
+
+    def slightly_off(addr, reg, length):  # ADC가 약 0.01V(= 0.05mA) 높게 읽는 경우
+        msb, lsb = original(addr, reg, length)
+        raw = ((msb << 8) | lsb) + 80
+        return [(raw >> 8) & 0xFF, raw & 0xFF]
+    bus.read_i2c_block_data = slightly_off
+    assert sensors.read(START) is not None
+
+
+def test_i2c_error_names_the_part(capsys):
+    sensors = PiSensors(Scenario("normal", START), bus=FakeBus(broken=True))
+    assert sensors.read(START) is None
+    assert "MCP4725(0x60)" in capsys.readouterr().out

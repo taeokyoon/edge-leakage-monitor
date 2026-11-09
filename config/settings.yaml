@@ -41,6 +41,7 @@ pi:
   leakage_input: dac     # dac = 시나리오 → MCP4725 → ADS1115 A1 (AI 지표 기준) | pot = 가변저항 → A2 (수동 시연)
   humidity: dht20        # dht20 = 실측 습도로 정상 누설전류 계산 (시연, 학습 중 입김 1회) | scenario = 합성 습도 (AI 지표)
   mA_per_V: 5.0          # 1V = 5mA (0.2V/mA). DAC 최대 3.3V = 16.5mA, 시나리오 최대 약 12mA
+  loopback_tol_mA: 0.5   # dac 모드 자가진단: 출력·측정 차이가 이보다 크면 배선 이상 → 센서 장애 (정상 오차 약 0.05mA)
 
 web:
   port: 8000
