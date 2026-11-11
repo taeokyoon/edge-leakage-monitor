@@ -48,6 +48,11 @@ class Scenario:
         self.start = start
         # SA-04 오탐: 보안용이 아니라 시뮬레이션 재현용 난수 (seed 고정 → 노이즈까지 재현 가능)
         self.rng = random.Random(seed)  # noqa: S311
+        self.repaired = False
+
+    def repair(self) -> None:
+        """가상 수리: 이후 이상 성분을 없앤다 (시험 장비 쪽 기능, --repair-on-ack. 제품 판정 코드와 무관)."""
+        self.repaired = True
 
     def sample(self, now: datetime, humidity_pct: float | None = None) -> dict | None:
         """가상 시각 now의 측정값. 데이터 끊김 구간이면 None (센서 장애).
@@ -75,7 +80,7 @@ class Scenario:
 
     def _fault_mA(self, since_event: timedelta) -> float:
         """절연 열화 등 이상으로 정상값 위에 더해지는 누설전류."""
-        if since_event <= timedelta(0):
+        if since_event <= timedelta(0) or self.repaired:
             return 0.0
         hours = since_event / timedelta(hours=1)
         if self.name == "gradual_rise":

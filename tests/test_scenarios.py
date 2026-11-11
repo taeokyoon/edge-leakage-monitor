@@ -126,3 +126,12 @@ def test_measured_humidity_overrides_synthetic():
     assert measured["humidity_pct"] == 70.0
     expected_diff = HUMIDITY_COEF_mA * (70.0 - synthetic["humidity_pct"])
     assert abs((measured["leakage_mA"] - synthetic["leakage_mA"]) - expected_diff) < 0.01
+
+
+def test_repair_removes_fault_but_keeps_normal_variation():
+    """--repair-on-ack 시험 기능: 수리 뒤에는 이상 성분만 사라지고 정상 변동(습도·가동)은 남는다."""
+    t = START + timedelta(days=2)  # sharp_rise 이상이 +7mA로 유지되는 시점
+    broken, repaired, normal = Scenario("sharp_rise", START), Scenario("sharp_rise", START), Scenario("normal", START)
+    repaired.repair()
+    assert broken.sample(t)["leakage_mA"] > 10
+    assert repaired.sample(t) == normal.sample(t)  # 같은 seed → 수리된 설비는 정상 설비와 같은 값
