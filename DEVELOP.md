@@ -120,6 +120,9 @@ mosquitto -c broker/mosquitto.conf
 # 터미널 3: 디바이스 에이전트 (--scenario 생략 시 normal, 이상은 시작 후 가상 1일부터, 처음 1일은 AI 학습 기간)
 #   normal | gradual_rise | humidity_rise | short_spike | repeated_spike | sharp_rise | data_loss
 .venv/bin/python -m leakmon.main --scenario sharp_rise
+# 점검권고 → ack 뒤 가상 수리까지 보려면 (시험용): --repair-on-ack
+# 또는 수동 입력 (테스터가 값을 직접 넣어 상태 전이 관찰, 판정은 고정 임계값): 7.0 → 주의, 9.5 → 점검권고, x → 센서장애
+.venv/bin/python -m leakmon.main --manual
 # 브라우저: http://localhost:8000
 .venv/bin/python tools/evaluate.py                           # 방식 3종 평가 지표
 .venv/bin/pytest -v -s tests/test_security.py                # 보안 시연 (브로커 실행 중일 때)
@@ -306,6 +309,13 @@ mosquitto -c broker/mosquitto.conf
   - 재실행: ruff 0건, mypy 0건, pytest 44 passed / 7 skipped → CI 3단계 모두 통과 (`docs/TEST.md` 4장)
 - [x] 5 커버리지 기준 결정 (테스터, 2026-11-08, A안): 범위 `src/leakmon` + `web`, 분기 커버리지, `state.py` 100% + 전체 하한선 49%
   - CI에 `state.py` 100% 게이트 단계 추가, 대조군 2개로 게이트가 실제로 막는 것 확인 (`docs/TEST.md` 5-1)
+- [x] 수동 입력 모드 (2026-11-08, 테스터 요청): `--manual` → `sensors/manual.py`가 터미널 입력값을 측정값으로 사용, 판정은 baseline
+  - 확인: `tests/test_manual.py` 5개 합격, 입력 7.0/4.5/7.0/9.5/4.5/abc/x/4.5로 정상→주의→정상→주의→점검권고→센서장애→점검권고 관찰
+- [x] 가상 수리 옵션 `--repair-on-ack` (2026-11-08, 고객 결정: 수리는 시험 장비 쪽, 제품 화면에 수리 버튼 없음)
+  - `Scenario.repair()`: 이후 이상 성분만 0 (정상 변동은 유지). `main.py`는 ack 성공 시 옵션이 켜져 있을 때만 호출
+  - 확인: `test_repair_removes_fault_but_keeps_normal_variation` 합격. 오프라인 재생(sharp_rise, 가상 3일):
+    ack만 → 2시간 24분 뒤 주의, 6시간 24분 뒤 점검권고 재발 / repair → 정상 유지
+  - 미확인: 실제 브로커·웹으로 대시보드 ack를 눌러 보는 e2e (테스터 확인 예정)
 - [ ] 6 0% 파일 테스트 추가 → 전체 하한선 상향 (`storage.py`, `sensors/`, `web/app.py`, `main.py`)
 
 ## 12. 문제 기록

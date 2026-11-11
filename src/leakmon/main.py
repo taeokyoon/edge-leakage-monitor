@@ -28,21 +28,25 @@ ALERT_MESSAGES = {
 }
 
 
-def run(scenario_name: str) -> None:
+def run(scenario_name: str, manual: bool = False, repair_on_ack: bool = False) -> None:
     settings = load_settings()
+    if manual:
+        settings["hardware"] = "manual"
     device_id = settings["device_id"]
     device = load_devices()[device_id]
     location = {k: device[k] for k in ("building", "line", "equipment")}
     time_scale = settings["time_scale"]
     normal_mA, alarm_mA = settings["baseline"]["normal_mA"], settings["baseline"]["alarm_mA"]
     ai = settings["ai"]
-    use_ai = ai["method"] == "linear"
+    # 수동 입력은 고정 임계값으로 판정: AI는 학습 기간 1일치 정상 데이터가 필요해 손으로 넣기 어렵다
+    use_ai = ai["method"] == "linear" and settings["hardware"] != "manual"
 
     # 가상 시간은 오늘 00:00부터 시작 → 시나리오의 시간대(가동·습도 주기)가 실행마다 같게 재현됨
     virtual_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     # 실행 구분용 ID: 실행마다 가상 시간이 처음부터 다시 시작하므로 웹은 최신 실행만 보여 준다
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
-    sensors = make_sensors(settings["hardware"], Scenario(scenario_name, virtual_start))
+    scenario = Scenario(scenario_name, virtual_start)
+    sensors = make_sensors(settings["hardware"], scenario)
     machine = StateMachine.from_settings(settings["state"])
     db = storage.connect(settings["db_path"])
     mqtt = DeviceMqtt(device_id, settings["mqtt"])
@@ -55,7 +59,10 @@ def run(scenario_name: str) -> None:
     learning_rows: list[dict] = []
     model = None
     print(f"[{device_id}] 시작 — 실행 {run_id}, 시나리오={SCENARIOS[scenario_name]}, "
-          f"배속 ×{time_scale}, 하드웨어={settings['hardware']}, 판정={ai['method']}")
+          f"배속 ×{time_scale}, 하드웨어={settings['hardware']}, 판정={'linear' if use_ai else 'baseline'}")
+    if settings["hardware"] == "manual":
+        print(f"수동 입력: 누설전류(mA)를 입력하고 Enter (예: 7.0 / 7.0 80 / x=끊김). "
+              f"정상 {normal_mA}mA, 경보 기준 {alarm_mA}mA")
 
     try:
         while True:
@@ -69,6 +76,9 @@ def run(scenario_name: str) -> None:
                 mqtt.ack_requested.clear()
                 if machine.ack():
                     print(f"[{ts_virtual}] 대시보드 ack 수신 → 정상")
+                    if repair_on_ack:  # 시험용: 점검 후 수리했다고 가정하고 시나리오의 이상 성분을 없앤다
+                        scenario.repair()
+                        print(f"[{ts_virtual}] 가상 수리 완료 (--repair-on-ack) → 누설전류 정상값으로 복귀")
 
             reading = sensors.read(now_virtual)
             learning = use_ai and model is None and now_virtual < learn_end
@@ -133,4 +143,8 @@ if __name__ == "__main__":
     scenario_list = ", ".join(f"{k}={v}" for k, v in SCENARIOS.items())
     parser.add_argument("--scenario", choices=SCENARIOS, default="normal",
                         help=f"시나리오 (이상은 시작 후 가상 1일부터): {scenario_list}")
-    run(parser.parse_args().scenario)
+    parser.add_argument("--manual", action="store_true", help="시나리오 대신 터미널에 직접 입력한 값으로 실행")
+    parser.add_argument("--repair-on-ack", action="store_true",
+                        help="시험용: ack를 받으면 수리했다고 가정하고 시나리오 누설전류를 정상값으로 되돌린다")
+    args = parser.parse_args()
+    run(args.scenario, args.manual, args.repair_on_ack)
