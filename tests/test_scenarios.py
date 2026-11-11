@@ -112,6 +112,22 @@ def test_repeated_spike_goes_caution_and_stays():
         assert states(t) == [CAUTION] and t[0][0] < timedelta(days=2)
 
 
+def test_measured_humidity_overrides_synthetic():
+    """Pi dht20 모드: 실측 습도를 넘기면 그 값이 쓰이고, 난수 순서는 합성 습도일 때와 같다."""
+    from datetime import datetime, timedelta
+
+    from leakmon.scenario import HUMIDITY_COEF_mA, Scenario
+    start = datetime(2026, 11, 9)
+    a, b = Scenario("normal", start), Scenario("normal", start)
+    now = start + timedelta(hours=3)
+    synthetic = a.sample(now)
+    measured = b.sample(now, humidity_pct=70.0)
+    assert synthetic is not None and measured is not None
+    assert measured["humidity_pct"] == 70.0
+    expected_diff = HUMIDITY_COEF_mA * (70.0 - synthetic["humidity_pct"])
+    assert abs((measured["leakage_mA"] - synthetic["leakage_mA"]) - expected_diff) < 0.01
+
+
 def test_repair_removes_fault_but_keeps_normal_variation():
     """--repair-on-ack 시험 기능: 수리 뒤에는 이상 성분만 사라지고 정상 변동(습도·가동)은 남는다."""
     t = START + timedelta(days=2)  # sharp_rise 이상이 +7mA로 유지되는 시점
