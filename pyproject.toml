@@ -17,7 +17,7 @@ dependencies = [
 # PC 전용: 테스트, 데이터셋 생성·학습·평가 도구
 # Pi 전용: 실제 I2C 센서 (sensors/pi.py). PC(sim)에서는 필요 없음
 pi = ["smbus2>=0.5"]
-dev = ["pytest>=8", "pandas>=3.0", "pytest-cov", "ruff", "mypy", "types-PyYAML"]
+dev = ["pytest>=8", "pandas>=3.0", "matplotlib>=3.10", "pytest-cov", "ruff", "mypy", "types-PyYAML"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -46,6 +46,7 @@ fail_under = 49  # 전체 하한선 (A안): 2026-11-08 측정값. 테스트를 �
 
 [tool.mypy]
 python_version = "3.12"
+mypy_path = "src"  # web/이 leakmon을 설치본이 아닌 소스로 검사하게 함
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]

@@ -135,3 +135,37 @@ def test_repair_removes_fault_but_keeps_normal_variation():
     repaired.repair()
     assert broken.sample(t)["leakage_mA"] > 10
     assert repaired.sample(t) == normal.sample(t)  # 같은 seed → 수리된 설비는 정상 설비와 같은 값
+
+
+def test_iforest_standard_score_is_liu_anomaly_score():
+    """iforest_std: 점수 = 원 논문의 이상 점수 s (0~1). 학습 범위를 크게 벗어난 값은 s > 0.5 (= T1 넘음)"""
+    from leakmon.ai.iforest import train_scorer
+    learning = generate("normal", 1, 0)
+    score = train_scorer(learning, SETTINGS["state"]["t1"], standard=True)
+    far = dict(learning[0], leakage_mA=learning[0]["leakage_mA"] + 5.0)
+    normal_s, far_s = score([learning[0], far])
+    assert 0 < normal_s <= 1 and 0 < far_s <= 1
+    assert far_s > SETTINGS["state"]["t1"]  # 먼 값은 표준 경계(s > 0.5)를 넘는다
+    assert far_s > normal_s
+
+
+def test_nonlinear_humidity_same_ends_steep_middle():
+    """습도 비선형 설비: 기준 습도(55%)와 90%에서는 선형과 같고, 60→70%에서 대부분 오른다 (Dolník et al., 2022 경향)"""
+    from leakmon.scenario import BASE_mA, normal_leakage
+    assert normal_leakage(55, 0, "nonlinear") == BASE_mA
+    assert abs(normal_leakage(90, 0, "nonlinear") - normal_leakage(90, 0)) < 1e-9
+    total = normal_leakage(90, 0, "nonlinear") - BASE_mA
+    assert normal_leakage(70, 0, "nonlinear") - normal_leakage(60, 0, "nonlinear") > 0.5 * total
+
+
+def test_plant_normal_days_moves_event_start():
+    """정상 구간을 3일로 늘리면 라벨·탐지 시간 기준이 3일로 옮겨지고, 학습 3일이 허용된다"""
+    from leakmon.scenario import Plant
+    plant = Plant(normal_days=3)
+    rows = generate("sharp_rise", 5, 0, plant=plant)
+    assert not any(r["anomaly"] for r in rows if r["ts"] - START <= timedelta(days=3))
+    assert all(r["anomaly"] for r in rows if r["ts"] - START > timedelta(days=3))
+    settings = {**SETTINGS, "ai": {**SETTINGS["ai"], "learn_days": 3}}
+    result = evaluation.summarize("sharp_rise", evaluation.replay("sharp_rise", 5, settings, "linear", 0, plant=plant),
+                                  plant)
+    assert result["alarm"] and result["delay"] < timedelta(hours=6)

@@ -161,7 +161,11 @@ GitHub에 push하면 `.github/workflows/ci.yml`이 아래를 자동으로 실행
 
 ```bash
 .venv/bin/pytest -v -s tests/test_security.py   # 보안 시연: 브로커(터미널 1)가 떠 있을 때만 실행됨
-.venv/bin/python tools/evaluate.py              # AI 방식 3종 성능 비교 (시나리오 7개 × seed 10개)
+.venv/bin/python tools/evaluate.py              # AI 방식 3종 성능 비교 (시나리오 7개 × seed 10개) → results/exp1_sil
+# Pi에서 (논문 실험 2·3)
+python tools/evaluate.py --hil                                 # HIL: DAC→ADC 측정값으로 같은 평가 → results/exp2_hil
+python tools/compare_runs.py results/exp1_sil results/exp2_hil  # SIL·HIL 판정 일치 비교
+python tools/bench.py --out results/bench_pi.json              # 학습·판정 처리 시간
 ```
 
 ## 6. 자주 나는 문제

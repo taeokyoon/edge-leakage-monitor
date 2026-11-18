@@ -1,0 +1,187 @@
+{
+  "commit": "479c1772547e7131e8765605557cb306f00f9f68",
+  "uncommitted_changes": true,
+  "run_at": "2026-11-18T14:32:29",
+  "host": "BOOK-4HD0IHE4PI",
+  "conditions": {
+    "experiment": "exp1b_robustness",
+    "seeds": 10,
+    "after_event_days": 13,
+    "groups": {
+      "A": [
+        "기본",
+        "습도 비선형",
+        "노이즈 2배",
+        "노이즈 4배"
+      ],
+      "B": [
+        "linear 학습 1일",
+        "linear 학습 3일",
+        "linear 학습 7일",
+        "nonlinear 학습 1일",
+        "nonlinear 학습 3일",
+        "nonlinear 학습 7일"
+      ],
+      "C": [
+        "상승 0.25mA/일",
+        "상승 1.0mA/일"
+      ]
+    },
+    "plants": {
+      "기본": {
+        "humidity_model": "linear",
+        "noise_mA": 0.05,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "습도 비선형": {
+        "humidity_model": "nonlinear",
+        "noise_mA": 0.05,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "노이즈 2배": {
+        "humidity_model": "linear",
+        "noise_mA": 0.1,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "노이즈 4배": {
+        "humidity_model": "linear",
+        "noise_mA": 0.2,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "linear 학습 1일": {
+        "humidity_model": "linear",
+        "noise_mA": 0.05,
+        "weather_pct": 10.0,
+        "normal_days": 1,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "linear 학습 3일": {
+        "humidity_model": "linear",
+        "noise_mA": 0.05,
+        "weather_pct": 10.0,
+        "normal_days": 3,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 3
+      },
+      "linear 학습 7일": {
+        "humidity_model": "linear",
+        "noise_mA": 0.05,
+        "weather_pct": 10.0,
+        "normal_days": 7,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 7
+      },
+      "nonlinear 학습 1일": {
+        "humidity_model": "nonlinear",
+        "noise_mA": 0.05,
+        "weather_pct": 10.0,
+        "normal_days": 1,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "nonlinear 학습 3일": {
+        "humidity_model": "nonlinear",
+        "noise_mA": 0.05,
+        "weather_pct": 10.0,
+        "normal_days": 3,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 3
+      },
+      "nonlinear 학습 7일": {
+        "humidity_model": "nonlinear",
+        "noise_mA": 0.05,
+        "weather_pct": 10.0,
+        "normal_days": 7,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 7
+      },
+      "상승 0.25mA/일": {
+        "humidity_model": "linear",
+        "noise_mA": 0.05,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 0.25,
+        "learn_days": 1
+      },
+      "상승 1.0mA/일": {
+        "humidity_model": "linear",
+        "noise_mA": 0.05,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 1.0,
+        "learn_days": 1
+      }
+    },
+    "caution_lines_mA": [
+      5.5,
+      6.0,
+      6.75,
+      7.5,
+      8.25,
+      9.0
+    ],
+    "sigma_scales": [
+      4,
+      6,
+      8,
+      10,
+      14,
+      20
+    ]
+  },
+  "settings": {
+    "hardware": "sim",
+    "device_id": "press-01",
+    "sample_period_s": 1.0,
+    "time_scale": 1440,
+    "db_path": "/home/taeokyoon/leakmon/data/leakmon.db",
+    "mqtt": {
+      "host": "localhost",
+      "port": 8883,
+      "ca_file": "/home/taeokyoon/leakmon/broker/certs/ca.crt"
+    },
+    "state": {
+      "t1": 0.5,
+      "t2": 1.0,
+      "d1_min": 120,
+      "d2_min": 240,
+      "recover_min": 120,
+      "fault_after_min": 60,
+      "spike_window_min": 1440,
+      "spike_count": 3
+    },
+    "baseline": {
+      "normal_mA": 4.5,
+      "alarm_mA": 9.0
+    },
+    "ai": {
+      "method": "linear",
+      "model_path": "models/linear.json",
+      "learn_days": 1,
+      "sigma_scale": 10
+    },
+    "pi": {
+      "i2c_bus": 1,
+      "leakage_input": "dac",
+      "humidity": "dht20",
+      "mA_per_V": 5.0,
+      "loopback_tol_mA": 0.5
+    },
+    "web": {
+      "port": 8000
+    }
+  }
+}

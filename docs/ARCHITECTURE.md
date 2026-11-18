@@ -186,7 +186,9 @@ leakmon/
 │   ├── setup.sh           # 인증서·계정 생성 (결과물은 git 제외)
 ├── tools/
 │   ├── gen_dataset.py       # 합성 시나리오 데이터셋 생성
-│   ├── evaluate.py          # 지표 산출 (AI vs baseline)
+│   ├── evaluate.py          # 지표 산출 (AI vs baseline), --hil = Pi DAC→ADC 측정값으로 평가
+│   ├── compare_runs.py      # SIL·HIL 결과 비교 (back-to-back)
+│   ├── bench.py             # 학습·판정 처리 시간 측정
 │   └── virtual_devices.py   # 가상 설비 발행기
 ├── tests/
 ├── data/                    # gitignore

@@ -99,12 +99,16 @@
 
 ## 9. 현재 단계
 
+- 진행 우선순위 (2026-11-12 사용자 확정): **논문 우선**. 실험마다 입력·출력을 명확히 정의하고 결과를 재현 가능하게 남긴다.
+  시연·완성도 작업(OLED·LED·버튼, 대시보드 다듬기, 최적화)은 논문 게재 후 공모전 준비 단계에서 한다.
+  논문 주제·RQ·실험 명세·일정은 `docs/PAPER.md`.
+
 - [x] 1단계: 저장소 골격, `sim` 모드로 수집 → 판정 → 저장 → MQTT → 웹 표시까지 end-to-end 동작 (2026-10-25)
 - [x] 2단계: 시나리오 생성기(배속), 고정 임계값 baseline (2026-10-26)
 - [x] 3단계: AI 모델 학습·평가, 지표 산출 (2026-11-07, 미결: TBD-02 학습 기간, TBD-04 점수 기준, TBD-05 합격 기준, IF 보정)
 - [ ] 검증 트랙 (2026-11-03~, 역할: AI 개발자 / 사용자 SW검증 테스터, 상세는 `docs/TEST.md`)
 - [x] 4단계: TLS·ID/비밀번호·ACL, 보안 시연 (2026-11-07)
-- [ ] 5단계: Pi 실제 하드웨어 연결 (ADS1115, MCP4725, DHT20, OLED, LED, 버튼)
+- [ ] 5단계: Pi 실제 하드웨어 연결 (ADS1115, MCP4725, DHT20, OLED, LED, 버튼) — 센서 입력부 완료(PR #1), 출력부·HIL 평가 남음
 - [ ] 6단계: 통합, 시연 영상, 보고서
 
 ## 10. 실행 방법 (PC, sim 모드)
@@ -293,7 +297,60 @@ mosquitto -c broker/mosquitto.conf
 - 검증: 보안 7개 통과, 전체 49개 통과, TLS로 웹 서버(8001)·에이전트 e2e (`/api/devices` online, 이력 조회)
 - mTLS(클라이언트 인증서)는 확장 범위라 하지 않음
 
+### 5단계: Pi 하드웨어 (2026-11-11~) — 진행 중
+- 센서 입력부 (팀원 작성, `feature/pi-sensors` → PR #1로 main 병합, 2026-11-11)
+  - `sensors/pi.py`: `hardware: pi`일 때 사용. 설정은 `settings.yaml` `pi:`
+    - `leakage_input: dac` (AI 지표 기준 = HIL 경로): 시나리오 목표값 → MCP4725 → 전선 → ADS1115 A1 → mA
+    - `leakage_input: pot` (수동 시연): 가변저항 → ADS1115 A2
+    - `humidity: dht20` (시연): DHT20 실측 습도를 `Scenario.sample(now, humidity_pct)`에 넘겨 정상 누설전류 계산
+    - `humidity: scenario` (AI 지표): 합성 습도. **HIL 지표 측정 시 반드시 이 값** (실측 습도는 재현 불가)
+  - 센서장애: I2C 오류(부품 이름 출력) 또는 DAC 경로 자가진단(출력·측정 차이 > `loopback_tol_mA` 0.5mA) → `None`
+  - 테스트: `tests/test_pi_sensors.py` (가짜 I2C 버스 주입, PC에서 실행)
+- 병합 시 충돌 3개 해결: `main.py`, `sensors/__init__.py`, `tests/test_scenarios.py` → 수동 모드·가상 수리(main) + Pi 센서(팀원) 모두 유지
+- 검증 (main @ 479c177): pytest 63 통과 / 7 건너뜀(보안 브로커 미실행), `state.py` 분기 100%, 전체 52.9%, ruff·mypy src 통과
+- 남은 일 (논문 우선, 2026-11-12 재정렬)
+  1. [논문] HIL 평가: 시나리오 7종을 Pi에서 실행 → SIL 결과와 비교 (back-to-back), 논문 지표
+  2. [논문] DAC→ADC 오차 기록 (팀원 측정, `pi.py` 주석 "0.5% 미만"의 근거 → HIL 신호 경로 타당성)
+  3. [논문] Pi 처리 성능: 학습 시간, 판정 1회 시간 (온디바이스 AI 주장 근거)
+  4. [공모전] OLED·LED 3·버튼 3 (`main.py` "로컬 표시" 자리, 지금은 콘솔)
+  5. [공모전] 고장 주입 테스트: `pi.py` DAC 쓰기 실패(103~104줄), DHT20 읽기 전체(108~119줄) 미실행
+  6. [공모전] `mypy web` 2건 (`web/app.py` 106~107줄, 기존 문제, CI는 `mypy src`만 검사해서 안 잡힘)
+- 진행 (2026-11-14, 개발 집중)
+  - [x] 6 `mypy web`: `pyproject.toml`에 `mypy_path = "src"`, 이력 API는 실행 기록 없는 장치면 빈 목록 반환, CI mypy 단계를 `mypy src web`으로
+  - [x] 1·2 HIL 평가 준비: `PiSensors.dac_path()`(장치 read()와 공용) + `tools/evaluate.py --hil` + `tools/compare_runs.py`(SIL↔HIL back-to-back)
+    - HIL은 같은 시나리오 신호를 (시나리오, seed)마다 한 번만 DAC→ADC로 측정해 방식 3종에 재사용, DAC→ADC 오차(평균·최대)를 meta.json에 저장 → 2번(오차 기록)도 같이 해결
+    - PC 확인(가짜 I2C 버스, seeds 2·days 4): baseline·linear 14/14 일치, iforest 12/14 (gradual_rise·sharp_rise seed 0이 SIL 미탐지 → HIL 탐지)
+      - SIL은 두 번 돌려도 동일(결정적) → 원인은 DAC 12비트 양자화(약 0.004mA 단위) 정도의 작은 차이에 iforest 판정이 흔들리는 것. 논문 관찰 후보 (실제 Pi 측정 후 다시 확인)
+  - [x] 3 성능 측정: `tools/bench.py` (학습 1회·판정 1회, 중앙값·최대). PC 참고값: 학습 linear 0.5ms / iforest 65ms, 판정 linear 0.003ms / iforest 3.5ms
+  - [ ] Pi에서 실행 (사람 필요): `python tools/evaluate.py --hil`, `python tools/compare_runs.py results/exp1_sil results/exp2_hil`, `python tools/bench.py --out results/bench_pi.json`
+  - [x] 5 고장 주입 테스트 `tests/test_pi_faults.py` 8개: 부품별 응답 없음(DAC만·ADC만·pot ADC·DHT20 시작·DHT20 읽기), DHT20 busy 비트, 일시 고장 후 복구, 실제 `_read_dht20()` 정상 경로
+    - 가짜 버스에 고장 주소를 지정하고, PC에 없는 smbus2는 가짜 모듈로 대체 → `pi.py` 분기 커버리지 81% → 97% (남은 61-62행 = Pi에서만 실행되는 SMBus 생성)
+    - 테스트가 실제로 잡는지 확인: busy 비트 검사를 일부러 지우면 1개 불합격 (되돌림)
+  - [ ] 4 OLED·LED·버튼 (부품 미구매, 핀 번호 결정 필요)
+
+### 6단계: 논문 실험·그림 (2026-11-18~) — 진행 중
+- 배경: 투고를 이번 주로 당김 (사용자, 2026-11-18). 논문 주제·RQ·실험 명세는 `docs/PAPER.md`
+- [x] Isolation Forest 포화 원인 확인: 이상 구간 점수가 학습 최대값 근처에서 포화 → seed마다 T1을 넘거나 못 넘음 (각 시나리오 5/10)
+  - 대응: 원 논문 표준 기준(s = -score_samples, s > 0.5)을 `iforest_std`로 추가, 두 기준 모두 보고 (`ai/iforest.py` `standard=`)
+  - 표준 기준 결과: 정상 시나리오도 10/10 경보 (학습 60개라 정상 점수도 0.5 근처) → F1 0.60
+- [x] 실험 1 재실행·저장: `results/exp1_sil/` (runs.csv 280행 = 방식 4 × 시나리오 7 × seed 10, meta.json)
+  - meta.json `uncommitted_changes: true` → **커밋 후 다시 실행해야 최종 숫자** (7초)
+- [x] `tools/make_figures.py`: runs.csv만으로 표·그림 재계산 → `results/paper/`
+  - 표: `table_exp1_scenarios.csv`(시나리오 × 방식), `table_exp1_metrics.csv`(P·R·F1, seed별 F1 평균±표준편차, 오경보 재생 수)
+  - 그림: `fig_exp1_timeseries.png`(습도 상승·완만한 상승 seed 0, 측정값·예측값·방식별 경보 구간), `fig_exp1_delay.png`(고정 임계값 vs 제안, 로그 축)
+  - 실험 2·3 결과 파일이 있으면 `table_exp2_agreement.csv`, `table_exp3_bench.csv`도 생성
+  - 한글 글꼴: WSL은 Windows 맑은 고딕, 리눅스는 나눔고딕 (없으면 경고)
+- 검증: ruff 0건, mypy `src web` 0건, pytest 78 통과 / 7 건너뜀 (iforest_std 점수 범위 1개, 논문 표 재계산 1개 추가)
+- [x] 실험 1b 강건성 (2026-11-18): `scenario.Plant`(습도 모델·노이즈·날씨 습도 변동·정상 구간·상승 속도) + `tools/robustness.py`
+  - `Plant()` 기본값 = 기존 시나리오. 리팩터링 전후 `results/exp1_sil/runs.csv` 바이트 단위 동일 확인
+  - 결과·해석은 `docs/PAPER.md` 6장 1-1. 핵심: 비선형 습도 + 학습 1일이면 제안 방법도 습도 오경보 10/10, 학습 3·7일(날씨 변동)이면 0
+  - `make_figures.py`에 통계 검정 표(Wilcoxon), 강건성 표, 임계값 조사 그림 추가
+  - 검증: ruff 0건, mypy 0건, pytest 81 통과 / 7 건너뜀 (비선형 습도 모양, 정상 구간 이동, 통계 "차이 없음" 처리 3개 추가)
+- [ ] Pi 실험 2·3 (사람 필요)
+- [ ] 원고
+
 ### 검증 트랙 (2026-11-03~)
+- **2026-11-14 중단**: 이 프로젝트는 구현 우선(논문)으로 전환. 검증 학습은 별도 연습 프로젝트에서 백지부터 진행 (프로젝트 `CLAUDE.md`)
 - 역할 변경: AI = 개발자, 사용자 = SW검증 테스터 (V-모델: 지금은 구현 단계 ↔ 단위 테스트·정적분석)
 - 순서 (2026-11-04 재정렬, 실무 V-모델 순서): 0 요구사항 명세서(SRS) 작성·리뷰 → 1 요구사항 ID·추적표 → 2 정적분석 도구
   → 4 블랙박스 설계 → 3 정적분석 결과 판정(개발자가 코드 맥락 설명 후) → 5 커버리지(화이트박스) → 6 다른 모듈·통합
@@ -316,6 +373,14 @@ mosquitto -c broker/mosquitto.conf
   - 확인: `test_repair_removes_fault_but_keeps_normal_variation` 합격. 오프라인 재생(sharp_rise, 가상 3일):
     ack만 → 2시간 24분 뒤 주의, 6시간 24분 뒤 점검권고 재발 / repair → 정상 유지
   - 미확인: 실제 브로커·웹으로 대시보드 ack를 눌러 보는 e2e (테스터 확인 예정)
+- 역할 재정리 (2026-11-13): 제품 코드(`src/`, `web/`) 수정·결함 수정·정적분석 위반 응답(수정/예외 사유) = 개발자(AI)
+  / 테스트 설계·테스트 코드(`tests/`)·CI 테스트 단계·실행·정적분석 보고·승인/반려·결함 보고·재확인 = 테스터
+  - 이유: 개발과 검증의 독립성. 테스터가 제품 코드를 고치면 자기 수정을 자기가 검증하게 됨
+  - 경계 기준: 코드를 쓰느냐가 아니라 제품 코드를 고치느냐 (실무 검증 엔지니어도 테스트 스크립트를 작성)
+  - 정적분석 순서: 테스터 실행·보고 → 개발자 응답 → 테스터 승인/반려 (SA-06은 개발자가 먼저 판정한 예외)
+  - 첫 적용: SA-06 (ruff S603·S607, `evaluation.py` `_git()`) 개발자 판정 둘 다 오탐 → 테스터 검토: S603 오탐 승인, S607 반려(ruff 지적이 사실이라 오탐 아님, 수용)
+    → 개발자가 판정·주석 정정 → 테스터 재확인(ruff 0건, pytest 63/7 skipped) → 종결 (`docs/TEST.md` 4장)
+- DR-02 (2026-11-13): TC-SYS-10b-01 불합격(코드 결함, 등록 안 된 장치에 KeyError) → `main.py` 등록 확인 후 이유 문장 출력·종료 → 테스터 재확인 → 종결
 - [ ] 6 0% 파일 테스트 추가 → 전체 하한선 상향 (`storage.py`, `sensors/`, `web/app.py`, `main.py`)
 
 ## 12. 문제 기록
@@ -353,3 +418,33 @@ mosquitto -c broker/mosquitto.conf
    - 문제 - 인증서 개인 키 폴더(`broker/certs/`)가 git 제외가 안 되고 있었음 (커밋 전에 발견)
    - 원인 - `.gitignore` 마지막 줄(`.coverage`)에 줄바꿈이 없는 채로 새 줄을 덧붙여 `.coveragebroker/certs/` 한 줄로 합쳐짐
    - 해결 - 두 줄로 분리하고 `git status --ignored`로 certs·passwd·secrets.yaml이 제외(!!)되는지 확인
+
+4.
+   - 날짜 - 2026-11-11
+   - 문제 - 팀원 브랜치(`feature/pi-sensors`)를 `git diff main`으로 보니 수동 모드·가상 수리가 지워진 것처럼 보였고, main과 합칠 때 3개 파일 충돌
+   - 원인 - 팀원은 `5b91342`에서 브랜치를 땄고, 그 뒤 main에 `546f873`(수동 모드·가상 수리)이 들어옴. 지운 게 아니라 그 기능이 생기기 전에 갈라진 것. 같은 줄을 양쪽이 고쳐 충돌
+   - 해결 - `git diff main...브랜치`(점 3개, 갈라진 시점 기준)로 실제 변경만 확인. `git merge-tree`로 충돌을 미리 본 뒤 팀원 브랜치에서 `git merge main`, 양쪽 기능 모두 유지하게 해결. 테스트 수 57 + 6 = 63으로 빠진 기능 없음 확인 후 PR #1
+
+5.
+   - 날짜 - 2026-11-11
+   - 문제 - `ruff check`가 6934건 오류를 냄 (프로젝트 폴더에서는 0건)
+   - 원인 - 홈 폴더(`~`)에서 실행해 `.vscode-server`, `.claude` 아래 남의 코드까지 검사함. venv 활성화는 어느 ruff를 쓸지만 정하고, 검사 범위는 현재 폴더가 정함
+   - 해결 - 저장소 루트에서 `ruff check .` 실행. 결과 기록 시 도구 버전과 실행 위치를 같이 적기
+
+6.
+   - 날짜 - 2026-11-14
+   - 문제 - `pyproject.toml`에 `mypy_path = "src"`를 넣었는데 `mypy web`이 `Module "leakmon" has no attribute "storage"` 오류
+   - 원인 - 설정 변경 전 실행 결과가 `.mypy_cache`에 남아 있어, 예전(설치본 건너뛰기) 상태로 leakmon을 해석함
+   - 해결 - `.mypy_cache` 삭제 후 재실행 → 진짜 오류 2건(`run_id`가 None일 수 있음)만 남음. mypy 설정을 바꾸면 캐시부터 지울 것
+
+7.
+   - 날짜 - 2026-11-18
+   - 문제 - Isolation Forest가 탐지 시나리오마다 정확히 5/10만 탐지 (seed에 따라 갈림)
+   - 원인 - 점수를 "학습 데이터 최대값 = T1"로 맞췄는데, IF 점수는 학습 범위를 벗어나면 포화돼 이상 구간 점수가 학습 최대값과 비슷한 수준에 머묾 (seed 0: 최대 0.57 / seed 1: 0.50). 넘느냐 못 넘느냐가 seed에 좌우됨
+   - 해결 - 코드 결함이 아니라 비교 방법의 특성. 원 논문 표준 기준(s > 0.5)을 `iforest_std`로 추가해 두 기준 모두 보고 (표준 기준은 상시 경보, F1 0.60) → 논문 4.6 실패 사례 분석에 사용
+
+8.
+   - 날짜 - 2026-11-18
+   - 문제 - 습도 영향을 비선형(60~70% 급증)으로 바꾸면 제안 방법도 습도 상승 오경보 10/10
+   - 원인 - 학습 1일 동안 습도가 50~60%만 오가 급증 구간을 학습하지 못함 (외삽 실패). 결함이 아니라 방법의 적용 조건
+   - 해결 - 학습 기간에 날씨 습도 변동이 들어가면(3·7일) 오경보 0. 논문에 적용 조건과 한계(비선형 시 탐지 시간 증가)로 기록

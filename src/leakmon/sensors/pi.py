@@ -68,25 +68,39 @@ class PiSensors:
             target = self.scenario.sample(now, measured)
             if target is None:  # data_loss 시나리오의 끊김 구간 → 장치도 측정 실패로 처리
                 return None
-            if self.cfg["leakage_input"] == "pot":
-                volts = self._read_adc("A2")
-            else:
-                code = mA_to_dac_code(target["leakage_mA"], self.cfg["mA_per_V"])
-                self._write_dac(code)
-                time.sleep(0.005)  # DAC 출력 안정 대기
-                volts = self._read_adc("A1")
+            leakage = self._read_adc("A2") * self.cfg["mA_per_V"] if self.cfg["leakage_input"] == "pot" else None
             humidity = target["humidity_pct"]  # dht20 모드면 실측값이 그대로 들어 있다
         except OSError as e:  # I2C 응답 없음 (Errno 5/121 등) → 센서 장애. SensorError면 부품 이름 포함
             print(f"[pi] I2C 읽기 실패: {e}")
             return None
-        leakage = volts * self.cfg["mA_per_V"]
         if self.cfg["leakage_input"] == "dac":
-            sent = code / 4095 * DAC_VREF * self.cfg["mA_per_V"]  # DAC 범위로 잘린 경우까지 반영한 실제 출력값
-            if abs(leakage - sent) > self.cfg["loopback_tol_mA"]:
-                print(f"[pi] DAC→ADC 불일치: 출력 {sent:.2f}mA, 측정 {leakage:.2f}mA"
-                      " — MCP4725 VOUT ↔ ADS1115 A1 배선 확인")
-                return None
+            leakage, _ = self.dac_path(target["leakage_mA"])
+        if leakage is None:
+            return None
         return {"leakage_mA": round(leakage, 3), "humidity_pct": round(humidity, 1), "source": "pi"}
+
+    def dac_path(self, mA: float) -> tuple[float | None, float | None]:
+        """목표 mA → MCP4725 → 전선 → ADS1115 A1 → 측정 mA. 장치 read()와 HIL 평가(tools/evaluate.py --hil)가 같이 쓴다.
+
+        반환: (측정값, 오차 = 측정 - 실제 출력). 센서 장애면 측정값 None
+        - I2C 오류: (None, None)
+        - 자가진단 실패 (오차 > loopback_tol_mA, 배선 이상): (None, 오차)
+        """
+        code = mA_to_dac_code(mA, self.cfg["mA_per_V"])
+        try:
+            self._write_dac(code)
+            time.sleep(0.005)  # DAC 출력 안정 대기
+            measured = self._read_adc("A1") * self.cfg["mA_per_V"]
+        except OSError as e:
+            print(f"[pi] I2C 읽기 실패: {e}")
+            return None, None
+        sent = code / 4095 * DAC_VREF * self.cfg["mA_per_V"]  # DAC 범위로 잘린 경우까지 반영한 실제 출력값
+        error = measured - sent
+        if abs(error) > self.cfg["loopback_tol_mA"]:
+            print(f"[pi] DAC→ADC 불일치: 출력 {sent:.2f}mA, 측정 {measured:.2f}mA"
+                  " — MCP4725 VOUT ↔ ADS1115 A1 배선 확인")
+            return None, error
+        return measured, error
 
     def _write_dac(self, code: int) -> None:
         # MCP4725 fast write: [0000 D11..D8] [D7..D0]

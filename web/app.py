@@ -102,6 +102,8 @@ def get_history(device_id: str, limit: int = Query(200, ge=1, le=2000)):
     conn = storage.connect(settings["db_path"])
     try:
         run_id = storage.latest_run_id(conn, device_id)  # 최신 실행만 (실행끼리 가상 시간이 겹침)
+        if run_id is None:  # 아직 한 번도 실행 안 된 장치: 이력 없음
+            return {"telemetry": [], "alerts": []}
         return {
             "telemetry": storage.recent_rows(conn, "telemetry", device_id, run_id, limit),
             "alerts": storage.recent_rows(conn, "alerts", device_id, run_id, 50),

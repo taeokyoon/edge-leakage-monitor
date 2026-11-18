@@ -9,6 +9,7 @@
 """
 import math
 import random
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 # 가상 설비의 "실제" 정상 특성. 이상 탐지기 쪽 설정(settings.yaml baseline)과 일부러 분리한다
@@ -17,7 +18,32 @@ BASE_mA = 4.5               # 기준 습도·비가동 시 누설전류
 HUMIDITY_REF_pct = 55.0     # 기준 습도
 HUMIDITY_COEF_mA = 0.08     # 습도 1%p당 누설전류 증가 (흡습으로 절연 저항 감소)
 RUNNING_EXTRA_mA = 0.4      # 가동 시간대(08~18시) 추가분
-EVENT_START = timedelta(days=1)  # 이상이 시작되는 시점
+EVENT_START = timedelta(days=1)  # 이상이 시작되는 시점 (기본 Plant 기준)
+
+
+@dataclass(frozen=True)
+class Plant:
+    """가상 설비의 특성. 기본값 = 기존 시나리오 그대로 (실험 1). 강건성 실험(tools/robustness.py)에서 바꾼다.
+
+    - humidity_model: linear = 습도에 비례 / nonlinear = 60~70%에서 급증 후 완만 (Dolník et al., 2022 측정 경향)
+      → 제안 모델(선형 회귀)과 다른 구조의 데이터에서도 동작하는지 확인 (모델 불일치)
+    - noise_mA: 측정 노이즈 표준편차
+    - weather_pct: 날씨에 따른 며칠 주기(4일) 습도 변동 폭 (±%p). 학습 기간에 습도 범위가 넓어지는 효과
+    - normal_days: 이상 시작 전 정상 구간 (학습 기간을 늘리는 실험용)
+    - rise_mA_per_day: gradual_rise의 상승 속도
+    """
+    humidity_model: str = "linear"
+    noise_mA: float = 0.05
+    weather_pct: float = 0.0
+    normal_days: float = 1.0
+    rise_mA_per_day: float = 0.5
+
+    @property
+    def event_start(self) -> timedelta:
+        return timedelta(days=self.normal_days)
+
+
+DEFAULT_PLANT = Plant()
 
 SCENARIOS = {
     "normal": "정상 운전",
@@ -34,14 +60,25 @@ SCENARIOS = {
 ALARM_EXPECTED = {"gradual_rise", "repeated_spike", "sharp_rise"}
 
 
-def normal_leakage(humidity_pct: float, hour: float) -> float:
+def _sigmoid(humidity_pct: float) -> float:
+    return 1 / (1 + math.exp(-(humidity_pct - 65) / 3))  # 65% 중심, 60~70%에서 급증
+
+
+def normal_leakage(humidity_pct: float, hour: float, humidity_model: str = "linear") -> float:
     """습도를 반영한 합성 정상 변동: 정상 설비라면 누설전류가 이 값 근처에 있다."""
     running = 8 <= hour < 18
-    return BASE_mA + HUMIDITY_COEF_mA * (humidity_pct - HUMIDITY_REF_pct) + (RUNNING_EXTRA_mA if running else 0.0)
+    if humidity_model == "nonlinear":
+        # 기준 습도(55%)에서 0, 90%에서 선형 모델과 같은 증가량(0.08 × 35 = 2.8mA)이 되게 맞춘 S자 곡선
+        top = HUMIDITY_COEF_mA * (90 - HUMIDITY_REF_pct)
+        humidity_part = top * (_sigmoid(humidity_pct) - _sigmoid(HUMIDITY_REF_pct)) / (
+            _sigmoid(90) - _sigmoid(HUMIDITY_REF_pct))
+    else:
+        humidity_part = HUMIDITY_COEF_mA * (humidity_pct - HUMIDITY_REF_pct)
+    return BASE_mA + humidity_part + (RUNNING_EXTRA_mA if running else 0.0)
 
 
 class Scenario:
-    def __init__(self, name: str, start: datetime, seed: int = 0):
+    def __init__(self, name: str, start: datetime, seed: int = 0, plant: Plant = DEFAULT_PLANT):
         if name not in SCENARIOS:
             raise ValueError(f"알 수 없는 시나리오: {name} (가능: {', '.join(SCENARIOS)})")
         self.name = name
@@ -49,6 +86,7 @@ class Scenario:
         # SA-04 오탐: 보안용이 아니라 시뮬레이션 재현용 난수 (seed 고정 → 노이즈까지 재현 가능)
         self.rng = random.Random(seed)  # noqa: S311
         self.repaired = False
+        self.plant = plant
 
     def repair(self) -> None:
         """가상 수리: 이후 이상 성분을 없앤다 (시험 장비 쪽 기능, --repair-on-ack. 제품 판정 코드와 무관)."""
@@ -60,20 +98,23 @@ class Scenario:
         humidity_pct: 실측 습도(Pi DHT20). 주면 합성 습도 대신 이 값으로 정상 누설전류를 계산한다
                       → 실제 습도 변화가 누설전류에 반영된다 (humidity_rise의 합성 상승은 쓰지 않음)
         """
-        since_event = now - self.start - EVENT_START  # 음수면 아직 이상 시작 전
+        since_event = now - self.start - self.plant.event_start  # 음수면 아직 이상 시작 전
         hour = now.hour + now.minute / 60
 
         if self.name == "data_loss" and timedelta(0) <= since_event < timedelta(hours=3):
             return None
 
-        humidity = self._humidity(hour, since_event) + self.rng.gauss(0, 0.3)  # 실측을 써도 난수 순서는 유지
+        humidity = self._humidity(now, hour, since_event) + self.rng.gauss(0, 0.3)  # 실측을 써도 난수 순서는 유지
         if humidity_pct is not None:
             humidity = humidity_pct
-        leakage = normal_leakage(humidity, hour) + self._fault_mA(since_event) + self.rng.gauss(0, 0.05)
+        leakage = (normal_leakage(humidity, hour, self.plant.humidity_model) + self._fault_mA(since_event)
+                   + self.rng.gauss(0, self.plant.noise_mA))
         return {"leakage_mA": round(leakage, 3), "humidity_pct": round(humidity, 1), "source": "sim"}
 
-    def _humidity(self, hour: float, since_event: timedelta) -> float:
+    def _humidity(self, now: datetime, hour: float, since_event: timedelta) -> float:
         daily = 5 * math.cos(2 * math.pi * (hour - 6) / 24)  # 새벽 6시 최고, 오후 6시 최저 (±5%p)
+        if self.plant.weather_pct:  # 날씨: 4일 주기 습도 변동 (기본 0 → 기존 데이터 그대로)
+            daily += self.plant.weather_pct * math.sin(2 * math.pi * ((now - self.start) / timedelta(days=4)))
         if self.name == "humidity_rise" and since_event > timedelta(0):
             daily += 35 * min(since_event / timedelta(days=2), 1.0)  # 2일에 걸쳐 +35%p 오른 뒤 유지
         return HUMIDITY_REF_pct + daily
@@ -84,7 +125,7 @@ class Scenario:
             return 0.0
         hours = since_event / timedelta(hours=1)
         if self.name == "gradual_rise":
-            return 0.5 * hours / 24             # 하루 0.5mA씩 꾸준히 상승
+            return self.plant.rise_mA_per_day * hours / 24  # 하루 0.5mA(기본)씩 꾸준히 상승
         if self.name == "short_spike":
             return 6.0 if hours < 1 else 0.0    # 1시간만 +6mA 튀었다가 복귀
         if self.name == "repeated_spike":
@@ -95,17 +136,17 @@ class Scenario:
 
 
 def generate(name: str, days: float, seed: int = 0, step: timedelta = timedelta(minutes=24),
-             start: datetime = datetime(2026, 11, 1)) -> list[dict]:
+             start: datetime = datetime(2026, 11, 1), plant: Plant = DEFAULT_PLANT) -> list[dict]:
     """시나리오를 step 간격으로 days일 재생한 데이터셋. 기본 step 24분 = 실제 1초 × 배속 1440 (SYS-01).
 
     각 행: ts(가상 시각), leakage_mA·humidity_pct(데이터 끊김이면 None), anomaly(평가 라벨)
     """
-    scenario = Scenario(name, start, seed)
+    scenario = Scenario(name, start, seed, plant)
     rows = []
     now = start
     while now < start + timedelta(days=days):
         reading = scenario.sample(now) or {"leakage_mA": None, "humidity_pct": None}
         rows.append({"ts": now, "leakage_mA": reading["leakage_mA"], "humidity_pct": reading["humidity_pct"],
-                     "anomaly": name in ALARM_EXPECTED and now - start > EVENT_START})
+                     "anomaly": name in ALARM_EXPECTED and now - start > plant.event_start})
         now += step
     return rows

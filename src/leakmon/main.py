@@ -33,7 +33,11 @@ def run(scenario_name: str, manual: bool = False, repair_on_ack: bool = False) -
     if manual:
         settings["hardware"] = "manual"
     device_id = settings["device_id"]
-    device = load_devices()[device_id]
+    devices = load_devices()
+    if device_id not in devices:
+        # SYS-10b: 등록 안 된 장치는 시작 거부 + 이유 출력 (DR-02: 확인 없이 꺼내다 KeyError로 죽던 것)
+        raise SystemExit(f"등록되지 않은 장치: {device_id} (config/devices.yaml에 등록 후 다시 실행)")
+    device = devices[device_id]
     location = {k: device[k] for k in ("building", "line", "equipment")}
     time_scale = settings["time_scale"]
     normal_mA, alarm_mA = settings["baseline"]["normal_mA"], settings["baseline"]["alarm_mA"]
