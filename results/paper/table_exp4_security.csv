@@ -1,0 +1,8 @@
+﻿케이스,브로커 응답,판정
+test_1_plaintext_is_refused,평문 접속 → 응답 없음,PASSED
+test_2_wrong_password_is_refused,틀린 비밀번호 → Not authorized,PASSED
+test_3_registered_device_connects,press-01 정상 접속 → Success,PASSED
+test_4_device_can_publish_own_topic,"press-01 → factory/leakage/press-01/alert: 브로커 답 ['Success'], web 수신 1건",PASSED
+test_5_device_cannot_publish_other_device_topic,"press-01 → factory/leakage/press-02/alert: 브로커 답 ['Not authorized'], web 수신 0건",PASSED
+test_6_web_cannot_forge_telemetry,web → press-01/telemetry: 브로커 답 ['Not authorized'],PASSED
+test_7_web_can_send_cmd_to_device,"web → press-01/cmd: 장치 구독 결과·수신 ['Granted QoS 1', '{""command"": ""ack""}']",PASSED

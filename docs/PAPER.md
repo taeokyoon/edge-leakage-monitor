@@ -59,15 +59,15 @@
    - 3장 - 시스템 구조, 정상 모델(선형 회귀), 이상 점수(σ 정규화), 지속 시간 상태 머신, 순간 튐 처리, 보안 통신
 3. 전 - 4장 실험 및 평가
    - 4.1 검증 환경 - SIL/HIL 구성, 가상 플랜트 모델과 그 근거, 시나리오 7종과 정답 라벨
-   - 4.2~4.5 - 실험 1~4 결과
-   - 4.6 실패 사례 분석 - 제안 방법의 습도 상승 오경보 2/10의 원인(학습 1일 동안 습도 변화가 ±5%p뿐이라 습도 계수 추정 오차가 외삽에서 커짐)
+   - 4.2 실험 1, 4.3 실험 1b(강건성), 4.4~4.6 실험 2~4 결과
+   - 4.7 실패 사례 분석 - 제안 방법의 습도 상승 오경보 2/10의 원인(학습 1일 동안 습도 변화가 ±5%p뿐이라 습도 계수 추정 오차가 외삽에서 커짐)
      + 습도 비선형 설비에서 학습 1일이면 습도 상승 오경보 10/10 → 학습 기간이 습도 범위를 덮으면 0 (실험 1b). 남은 한계: 비선형일 때 탐지 시간 증가 → 향후 연구: 비선형 정상 모델
      + Isolation Forest의 한계: 학습 데이터 범위를 벗어나면 점수가 포화돼 "얼마나 이상한가"를 구분 못 함 → 학습 최대값 기준은 seed마다 탐지가 갈리고(각 5/10, F1 seed별 0.27 ± 0.33), 표준 기준(s > 0.5)은 학습 데이터 60개에서 정상 점수도 0.5 근처라 상시 경보(오경보 40/40)
    - "전"인 이유 - 잘된 결과만이 아니라 어디서 왜 틀리는지를 보여야 결과를 믿을 수 있다
 4. 결 - 5장 결론
    - 담을 것 - RQ별 답 요약, 한계, 향후 연구
    - 한계 - 합성 데이터, ZCT 센서 응답 미검증(HIL 범위는 ADC 이후), 개루프 HIL, 단일 설비, 학습 기간 1일
-   - 향후 연구 - 실설비 데이터, CT 응답 검증, 학습 기간 확장
+   - 향후 연구 - 실설비 데이터, CT 응답 검증, 학습 기간 확장, 비선형 정상 모델(습도 비선형 시 탐지 시간 증가 개선, 2026-11-18 결정: 이번 논문은 한계로 기록)
 
 ## 6. 실험 명세 (입력 → 처리 → 출력)
 
@@ -101,15 +101,20 @@
    - 입력 - 공통 입력, 시나리오 값을 Pi DAC→ADC로 통과시킨 측정값 (습도는 시나리오 합성값 고정)
    - 처리 - 제안 방법 (필요 시 3종 모두)
    - 출력 - 실험 1과 같은 지표 + SIL 대비 판정 일치율 + DAC→ADC 오차(평균·최대)
-   - 도구 - Pi에서 `python tools/evaluate.py --hil` → `results/exp2_hil/` (DAC→ADC 오차는 meta.json), 비교 `python tools/compare_runs.py results/exp1_sil results/exp2_hil` (2026-11-14 작성, Pi 실행 전)
+   - 도구 - Pi에서 `bash tools/pi_experiments.sh` 한 번 (사전 점검 → 실험 2 → SIL↔HIL 비교 → 실험 3 → 결과 압축). 실험 2만 약 20~30분
+     - 결과 - `results/exp2_hil/` (runs.csv, meta.json에 DAC→ADC 오차 평균·최대, dac_adc_errors.csv 원자료, compare.txt)
+     - PC로 가져와 `python tools/make_figures.py` → `table_exp2_agreement.csv`, `fig_exp2_dac_error.png`
 3. 실험 3: 온디바이스 처리 성능 (RQ3)
    - 입력 - Pi 4B 2GB, 학습 데이터 1일분(60개)
    - 출력 - 학습 1회 시간, 판정 1회 시간(평균·최대), 측정 주기 대비 여유
-   - 도구 - Pi에서 `python tools/bench.py --out results/bench_pi.json` (2026-11-14 작성, Pi 실행 전)
+   - 도구 - `tools/pi_experiments.sh`에 포함 (`bench.py --out results/bench_pi.json`) → `table_exp3_bench.csv`
+   - 측정 항목 (2026-11-18 추가) - 학습 7일분(420개) 시간, 최대 메모리(RSS), Pi면 센서 1회(DAC→ADC) 시간
+   - PC 참고값 (x86_64) - 학습 1일 0.6ms / 7일 1.0ms, 판정 0.005ms, 최대 메모리 156MB (Pi 값으로 바꿔 쓸 것)
 4. 실험 4: 보안 기능 검증 (보조)
    - 입력 - 공격·대조 케이스 7개 (`tests/test_security.py`)
    - 출력 - 케이스별 차단·허용 결과
-   - 도구 - 있음 (브로커 실행 후 pytest)
+   - 도구 - `bash tools/exp4_security.sh` (브로커 실행 → 7개 케이스 → `results/exp4_security/` junit.xml·pytest.log·broker.log·meta.txt) → `table_exp4_security.csv`
+   - 결과 (2026-11-18, PC·mosquitto 2.0.18) - 7/7 합격. 평문 접속 응답 없음(브로커: SSL 오류), 틀린 비밀번호 Not authorized, 다른 장치 토픽 위조 발행 Not authorized + 브로커 `Denied PUBLISH`, 웹의 telemetry 위조 Not authorized, 대조군 3개 정상
 
 결과 저장 규칙
 
@@ -204,3 +209,65 @@
 2. MCUNet (Lin et al., NeurIPS 2020) - MCU에서 딥러닝 추론. 본 시스템(Pi 4B, 선형 회귀, 장치 내 학습)의 설계 근거가 아님. 엣지 AI 배경은 5번으로 충분
 
 아직 빈 곳: 저압 설비 누설전류의 정상 범위·노이즈 크기 근거, MQTT 보안(OASIS MQTT v5.0), 누설전류·절연 기준(전기설비기술기준 / KEC 해당 조항), HIL·SIL 검증 절차
+
+## 12. 그림 원본 (Mermaid, 2026-11-18)
+
+GitHub에서 이 파일을 열면 그림으로 보인다. 논문용 이미지는 https://mermaid.live 에 붙여 넣고 PNG·SVG로 내려받거나, 이 구조대로 PPT에서 다시 그린다. 조건 값은 `config/settings.yaml`, 전이 규칙은 `src/leakmon/state.py` `update()`와 같다
+
+1. 그림 - 시스템 구조 (3장)
+
+```mermaid
+flowchart LR
+  P["가상 플랜트<br/>시나리오 7종"] --> DAC["MCP4725 DAC"] --> ADC["ADS1115 A1"]
+  subgraph PI["Raspberry Pi 4B 2GB (단일 장치)"]
+    ADC --> AI["온디바이스 학습·판정<br/>선형 회귀 + σ 정규화 잔차"]
+    HUM["습도 (DHT20 / 합성)"] --> AI
+    AI --> SM["상태 머신<br/>지속 시간·순간 튐"]
+    SM --> DB[("SQLite")]
+    SM --> MC["MQTT 클라이언트"]
+    BR["Mosquitto 브로커<br/>TLS 8883 · 장치 계정 · 토픽 ACL"]
+    WEB["웹 서버<br/>FastAPI + WebSocket"]
+  end
+  MC -- "telemetry / alert" --> BR --> WEB --> UI["대시보드<br/>설비 위치·추세·알림"]
+  UI -- "점검 확인(ack)" --> WEB -- "cmd" --> BR --> MC
+```
+
+2. 그림 - 상태 전이 (3장)
+
+```mermaid
+stateDiagram-v2
+  [*] --> 정상
+  정상 --> 주의: 점수 > T1(0.5) D1(120분) 지속, 또는 순간 튐 24시간 내 3회
+  주의 --> 점검권고: 주의 진입 후 점수 > T2(1.0) D2(240분) 지속
+  주의 --> 정상: 점수 ≤ T1 R(120분) 지속, 순간 튐 3회 미만
+  점검권고 --> 정상: 대시보드 수동 확인(ack)
+  정상 --> 센서장애: 미수신 60분 초과
+  주의 --> 센서장애: 미수신 60분 초과
+  점검권고 --> 센서장애: 미수신 60분 초과
+  센서장애 --> 직전상태: 수신 재개 (지속 시간 타이머 초기화)
+```
+
+3. 그림 - SIL·HIL 검증 구성 (4.1)
+
+```mermaid
+flowchart LR
+  G["시나리오 생성기<br/>seed 0~9, 정답 라벨"] --> SIL["SIL: 값을 그대로 판정 (PC)"]
+  G --> D2["HIL: MCP4725 → 전선 → ADS1115 (Pi)"] --> J["같은 판정 코드<br/>방식 4종 + 상태 머신"]
+  SIL --> J
+  J --> R["runs.csv + meta.json<br/>(커밋 ID·설정)"] --> C["compare_runs.py<br/>SIL↔HIL 경보 일치"]
+```
+
+## 13. 결과 파일 → 논문 위치
+
+`python tools/make_figures.py` 한 번으로 `results/paper/`에 모두 다시 만든다
+
+1. `table_exp1_scenarios.csv` - 4.2 표: 시나리오별 탐지·오경보 횟수, 평균 탐지 시간
+2. `table_exp1_metrics.csv` - 4.2 표: Precision·Recall·F1, seed별 F1, 오경보 재생 수
+3. `table_exp1_stats.csv` - 4.2 본문: Wilcoxon 검정 (p = 0.002)
+4. `fig_exp1_timeseries.png` - 4.2 그림: 습도 상승(오경보)·완만한 상승(조기 탐지) 예시
+5. `fig_exp1_delay.png` - 4.2 그림: 탐지 시간 (고정 임계값 vs 제안)
+6. `table_exp1b_robustness.csv` - 4.3 표: 모델 불일치·학습 기간·상승 속도
+7. `fig_exp1b_tradeoff.png` - 4.3 그림: 임계값별 오경보 vs 탐지 시간
+8. `table_exp2_agreement.csv`, `fig_exp2_dac_error.png` - 4.4 (Pi 실행 후)
+9. `table_exp3_bench.csv` - 4.5 (Pi 실행 후)
+10. `table_exp4_security.csv` - 4.6 표: 보안 케이스 7개

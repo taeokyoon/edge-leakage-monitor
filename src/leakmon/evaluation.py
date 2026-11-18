@@ -118,8 +118,10 @@ def save_results(out_dir: Path, runs: list[dict], conditions: dict, settings: di
         writer.writerows(runs)
     meta = {
         "commit": _git("rev-parse", "HEAD"),
-        # 커밋 안 한 수정이 있으면 이 결과는 커밋 ID만으로 재현할 수 없다 (결과 파일 자체는 제외하려고 untracked 무시)
-        "uncommitted_changes": _git("status", "--porcelain", "--untracked-files=no") not in ("", "unknown"),
+        # 커밋 안 한 수정이 있으면 이 결과는 커밋 ID만으로 재현할 수 없다.
+        # 결과 폴더(results/)는 뺀다: 결과를 다시 만들면 그 파일이 바뀌는 건 당연하고 코드 재현성과 무관
+        "uncommitted_changes": _git("status", "--porcelain", "--untracked-files=no", "--",
+                                    ":(top)", ":(top,exclude)results") not in ("", "unknown"),
         "run_at": datetime.now().isoformat(timespec="seconds"),
         "host": platform.node(),
         "conditions": conditions,

@@ -11,6 +11,7 @@ HIL (Pi에서): python tools/evaluate.py --hil [--out results/exp2_hil]
 - Precision·Recall·F1: 측정 하나하나를 "경보 상태 vs 정답 라벨"로 센 값
 """
 import argparse
+import csv
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -26,15 +27,18 @@ def hours(td: timedelta) -> str:
     return f"{td / timedelta(hours=1):.1f}시간"
 
 
-def hil_signal(rows: list[dict], sensors, errors: list[float]) -> list[dict]:
-    """시나리오 값을 Pi DAC→ADC 경로로 통과시킨 측정값으로 바꾼다. 장치와 같은 규칙 (I2C 오류·자가진단 실패 = None)."""
+def hil_signal(rows: list[dict], sensors, errors: list[tuple[float, float]]) -> list[dict]:
+    """시나리오 값을 Pi DAC→ADC 경로로 통과시킨 측정값으로 바꾼다. 장치와 같은 규칙 (I2C 오류·자가진단 실패 = None).
+
+    errors: (목표 mA, 오차 mA)를 쌓는다 → 출력 크기별 오차 그림 (논문 신호 경로 타당성)
+    """
     out = []
     for r in rows:
         r = dict(r)
         if r["leakage_mA"] is not None:  # data_loss 끊김 구간은 그대로 None
             measured, error = sensors.dac_path(r["leakage_mA"])
             if error is not None:
-                errors.append(error)
+                errors.append((r["leakage_mA"], error))
             r["leakage_mA"] = None if measured is None else round(measured, 3)
         out.append(r)
     return out
@@ -47,7 +51,7 @@ def main(seeds: int, days: float, out_dir: Path, hil: bool) -> None:
 
     # 신호는 (시나리오, seed)마다 한 번만 만든다: 방식 3종이 같은 신호로 비교돼야 공정하고, HIL은 측정이 느리다
     signals = {(name, seed): generate(name, days, seed) for name in SCENARIOS for seed in range(seeds)}
-    errors: list[float] = []  # HIL: 측정 - 출력 오차 (DAC→ADC 오차 기록, 논문 신호 경로 타당성)
+    errors: list[tuple[float, float]] = []  # HIL: (목표, 측정 - 출력 오차) (DAC→ADC 오차 기록, 신호 경로 타당성)
     if hil:
         from leakmon.scenario import Scenario
         from leakmon.sensors.pi import PiSensors
@@ -85,11 +89,14 @@ def main(seeds: int, days: float, out_dir: Path, hil: bool) -> None:
 
     conditions: dict = {"experiment": "exp2_hil" if hil else "exp1_sil", "seeds": seeds, "days": days}
     if hil:
-        abs_err = [abs(e) for e in errors]
+        abs_err = [abs(e) for _, e in errors]
         conditions["dac_adc_error_mA"] = {"count": len(errors), "mean_abs": round(sum(abs_err) / len(abs_err), 4),
                                           "max_abs": round(max(abs_err), 4)} if errors else None
         print(f"DAC→ADC 오차: {conditions['dac_adc_error_mA']}")
     save_results(out_dir, runs, conditions, settings)
+    if errors:  # 원자료: 오차 분포 그림용 (make_figures.py)
+        with open(out_dir / "dac_adc_errors.csv", "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerows([("target_mA", "error_mA"), *errors])
     print(f"결과 저장: {out_dir}/runs.csv ({len(runs)}행), {out_dir}/meta.json")
 
 

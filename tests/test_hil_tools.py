@@ -72,3 +72,26 @@ def test_paper_stats_no_difference_is_reported_not_tested(tmp_path):
     exp1_stats(runs, tmp_path)
     text = (tmp_path / "table_exp1_stats.csv").read_text(encoding="utf-8-sig")
     assert text.count("차이 없음") == 4
+
+
+def test_paper_pi_results_become_tables(tmp_path):
+    """Pi 결과 파일(벤치 json, DAC 오차 csv)과 보안 로그가 표·그림으로 바뀐다 (Pi 실행 전 미리 확인)"""
+    import json
+
+    from make_figures import exp3_table, exp4_table, fig_dac_errors
+    bench = tmp_path / "bench.json"
+    bench.write_text(json.dumps({"host": "pi", "machine": "aarch64", "python": "3.11", "peak_rss_MB": 150.0,
+                                 "judge_linear": {"median_ms": 0.1, "max_ms": 10.0, "repeat": 3}}))
+    exp3_table(bench, {"sample_period_s": 1.0}, tmp_path)
+    table = (tmp_path / "table_exp3_bench.csv").read_text(encoding="utf-8-sig")
+    assert "판정 1회 - 제안 방법,0.1,10.0,3,1.000" in table and "최대 메모리 (MB),150.0" in table
+
+    (tmp_path / "dac_adc_errors.csv").write_text("target_mA,error_mA\n5.0,0.01\n10.0,-0.02\n")
+    fig_dac_errors(tmp_path, tmp_path)
+    assert (tmp_path / "fig_exp2_dac_error.png").exists()
+
+    log = "tests/test_security.py::test_2_wrong \n  틀린 비밀번호 → Not authorized\nPASSED\n"
+    (tmp_path / "pytest.log").write_text(log, encoding="utf-8")
+    exp4_table(tmp_path, tmp_path)
+    assert "test_2_wrong,틀린 비밀번호 → Not authorized,PASSED" in (
+        tmp_path / "table_exp4_security.csv").read_text(encoding="utf-8-sig")

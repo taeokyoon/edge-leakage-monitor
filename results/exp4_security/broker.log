@@ -1,0 +1,15 @@
+1794980954: Client press-01 disconnected, not authorised.
+1794980955: Client press-01 disconnected.
+1794980956: Client press-01 disconnected.
+1794980957: Client web disconnected.
+1794980957: Denied PUBLISH from press-01 (d0, q1, r0, m1, 'factory/leakage/press-02/alert', ... (47 bytes))
+1794980958: OpenSSL Error[0]: error:0A00009C:SSL routines::http request
+1794980958: Client <unknown> disconnected: Protocol error.
+1794980959: Client press-01 disconnected.
+1794980959: OpenSSL Error[0]: error:0A00009C:SSL routines::http request
+1794980959: Client <unknown> disconnected: Protocol error.
+1794980960: Client web disconnected.
+1794980960: Denied PUBLISH from web (d0, q1, r0, m1, 'factory/leakage/press-01/telemetry', ... (2 bytes))
+1794980961: Client web disconnected.
+1794980962: Client web disconnected.
+1794980963: Client press-01 disconnected.

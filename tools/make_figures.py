@@ -4,8 +4,9 @@
 입력 (있는 것만 사용)
 - results/exp1_sil/   실험 1 (필수) → 시나리오·지표 표, 통계 검정 표, 탐지 시간·시계열 그림
 - results/exp1b_robustness/ 실험 1b → 강건성 표, 임계값 조사(오경보 vs 탐지 시간) 그림
-- results/exp2_hil/   실험 2 → SIL↔HIL 일치표 + DAC→ADC 오차
-- results/bench_pi.json 실험 3 → 처리 시간표
+- results/exp2_hil/   실험 2 → SIL↔HIL 일치표 + DAC→ADC 오차 그림
+- results/bench_pi.json 실험 3 → 처리 시간·메모리 표
+- results/exp4_security/ 실험 4 → 보안 케이스 표
 출력: 표 = CSV(UTF-8 BOM, 한글 Word·엑셀에서 바로 열림), 그림 = PNG 300dpi
 """
 import argparse
@@ -257,14 +258,54 @@ def exp2_table(sil_dir: Path, hil_dir: Path, out: Path) -> None:
     print(f"DAC→ADC 오차 (mA): {err}")
 
 
+BENCH_LABELS = {"train_linear": "학습 1일 - 제안 방법", "train_iforest": "학습 1일 - Isolation Forest",
+                "judge_linear": "판정 1회 - 제안 방법", "judge_iforest": "판정 1회 - Isolation Forest",
+                "train_linear_7d": "학습 7일 - 제안 방법", "train_iforest_7d": "학습 7일 - Isolation Forest",
+                "sensor_dac_adc": "센서 1회 (DAC→ADC)"}
+
+
 def exp3_table(bench: Path, settings: dict, out: Path) -> None:
-    """표: 학습·판정 1회 처리 시간과 측정 주기 대비 비율"""
+    """표: 학습·판정·센서 1회 처리 시간, 측정 주기(실제 시간 1초) 대비 비율, 최대 메모리"""
     data = json.loads(bench.read_text(encoding="utf-8"))
     period_ms = settings["sample_period_s"] * 1000
-    rows = [{"항목": k, "중앙값 (ms)": v["median_ms"], "최대 (ms)": v["max_ms"], "반복": v["repeat"],
-             "측정 주기 대비 최대 (%)": f"{v['max_ms'] / period_ms * 100:.3f}"}
+    rows = [{"항목": BENCH_LABELS.get(k, k), "중앙값 (ms)": v["median_ms"], "최대 (ms)": v["max_ms"],
+             "반복": v["repeat"], "측정 주기 대비 최대 (%)": f"{v['max_ms'] / period_ms * 100:.3f}"}
             for k, v in data.items() if isinstance(v, dict) and "median_ms" in v]
+    rows.append({"항목": "최대 메모리 (MB)", "중앙값 (ms)": data.get("peak_rss_MB", "-"), "최대 (ms)": "-",
+                 "반복": "-", "측정 주기 대비 최대 (%)": "-"})
     write_csv(out / "table_exp3_bench.csv", rows)
+    print(f"  측정 장치: {data.get('host')} ({data.get('machine')}, Python {data.get('python')})")
+
+
+def fig_dac_errors(hil_dir: Path, out: Path) -> None:
+    """그림: 출력 크기(목표 mA)별 DAC→ADC 오차 분포 → HIL 신호 경로가 판정에 영향을 줄 만큼 틀리지 않는지"""
+    with open(hil_dir / "dac_adc_errors.csv", encoding="utf-8") as f:
+        pairs = [(float(r["target_mA"]), float(r["error_mA"])) for r in csv.DictReader(f)]
+    fig, ax = plt.subplots(figsize=(5.5, 3.0))
+    ax.scatter([t for t, _ in pairs], [e for _, e in pairs], s=1, alpha=0.3, color=COLORS["linear"])
+    ax.axhline(0, color="black", lw=0.6)
+    ax.set_xlabel("목표 누설전류 (mA)")
+    ax.set_ylabel("DAC→ADC 오차 (mA)")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out / "fig_exp2_dac_error.png", dpi=300)
+    plt.close(fig)
+    print(f"그림: {out / 'fig_exp2_dac_error.png'} ({len(pairs)}개)")
+
+
+def exp4_table(sec_dir: Path, out: Path) -> None:
+    """표: 보안 케이스별 브로커 응답과 판정. pytest.log에서 케이스 이름 다음 줄(브로커 응답 출력)을 읽는다"""
+    rows, case = [], None
+    for line in (sec_dir / "pytest.log").read_text(encoding="utf-8").splitlines():
+        if line.startswith("tests/test_security.py::"):
+            case = {"케이스": line.split("::")[1].strip(), "브로커 응답": "", "판정": ""}
+        elif case is not None and line.strip() in ("PASSED", "FAILED", "SKIPPED"):
+            case["판정"] = line.strip()
+            rows.append(case)
+            case = None
+        elif case is not None and line.strip():
+            case["브로커 응답"] = line.strip()
+    write_csv(out / "table_exp4_security.csv", rows)
 
 
 def main(out: Path) -> None:
@@ -292,12 +333,18 @@ def main(out: Path) -> None:
         print("실험 1b 결과 없음 (python tools/robustness.py 실행 필요) → 건너뜀")
     if (Path("results/exp2_hil") / "runs.csv").exists():
         exp2_table(sil, Path("results/exp2_hil"), out)
+        if (Path("results/exp2_hil") / "dac_adc_errors.csv").exists():
+            fig_dac_errors(Path("results/exp2_hil"), out)
     else:
         print("실험 2 결과 없음 (Pi에서 evaluate.py --hil 실행 필요) → 건너뜀")
     if Path("results/bench_pi.json").exists():
         exp3_table(Path("results/bench_pi.json"), settings, out)
     else:
         print("실험 3 결과 없음 (Pi에서 bench.py --out results/bench_pi.json 실행 필요) → 건너뜀")
+    if Path("results/exp4_security/pytest.log").exists():
+        exp4_table(Path("results/exp4_security"), out)
+    else:
+        print("실험 4 결과 없음 (bash tools/exp4_security.sh 실행 필요) → 건너뜀")
 
 
 if __name__ == "__main__":
