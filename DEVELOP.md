@@ -355,6 +355,11 @@ mosquitto -c broker/mosquitto.conf
   - 실험 4: `tools/exp4_security.sh` → `results/exp4_security/` 7/7 합격, 브로커 거부 기록 저장
   - `make_figures.py`: 실험 2 오차 그림, 실험 3 표(메모리 포함), 실험 4 표
   - 검증: ruff 0건, mypy 0건, pytest (아래 최종 실행 참고)
+- [x] Pi 실행 전 리허설 (2026-11-23)
+  - PC에서 가짜 smbus2(DAC→ADC 배선 + 잡음 σ 2mV)로 `pi_experiments.sh` 전체 실행 → 4단계 모두 완료, `make_figures.py`로 실험 2·3 표·그림 생성 확인
+  - 리허설 결과(가짜 버스라 논문에 쓰지 않음): 경보 일치 linear 70/70, baseline 70/70, iforest 64/70 (학습 최대값 포화 → 작은 잡음에도 뒤집힘)
+  - 추가: `evaluate.py --hil`이 I2C 오류·자가진단 실패로 버린 측정 수를 `meta.json`의 `hil_read_failures`에 기록 (논문에 측정 실패 수 보고용)
+  - 검증: ruff 0건, mypy 0건, pytest 83 통과 / 7 건너뜀 (측정 실패 수 1개 추가)
 - [ ] Pi 실험 2·3 (사람 필요): `bash tools/pi_experiments.sh`
 - [ ] 원고
 

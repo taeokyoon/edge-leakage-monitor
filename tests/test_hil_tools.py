@@ -95,3 +95,13 @@ def test_paper_pi_results_become_tables(tmp_path):
     exp4_table(tmp_path, tmp_path)
     assert "test_2_wrong,틀린 비밀번호 → Not authorized,PASSED" in (
         tmp_path / "table_exp4_security.csv").read_text(encoding="utf-8-sig")
+
+
+def test_hil_read_failures_counted_without_original_gaps():
+    # 원래 끊김 1개(None)는 실패로 세지 않고, I2C 오류로 None이 된 2개만 실패로 센다
+    from evaluate import count_missing, hil_signal
+    rows = [{"leakage_mA": 5.0}, {"leakage_mA": None}, {"leakage_mA": 6.0}]
+    signals = {("x", 0): rows}
+    before = count_missing(signals)
+    signals[("x", 0)] = hil_signal(rows, make(FakeBus(broken=True)), [])
+    assert count_missing(signals) - before == 2

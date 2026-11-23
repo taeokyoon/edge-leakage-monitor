@@ -27,6 +27,11 @@ def hours(td: timedelta) -> str:
     return f"{td / timedelta(hours=1):.1f}시간"
 
 
+def count_missing(signals: dict) -> int:
+    """누설전류 값이 없는(None) 샘플 수. HIL 측정 전후 차이 = 측정 실패 수."""
+    return sum(r["leakage_mA"] is None for rows in signals.values() for r in rows)
+
+
 def hil_signal(rows: list[dict], sensors, errors: list[tuple[float, float]]) -> list[dict]:
     """시나리오 값을 Pi DAC→ADC 경로로 통과시킨 측정값으로 바꾼다. 장치와 같은 규칙 (I2C 오류·자가진단 실패 = None).
 
@@ -57,10 +62,12 @@ def main(seeds: int, days: float, out_dir: Path, hil: bool) -> None:
         from leakmon.sensors.pi import PiSensors
         # dac_path만 쓰므로 시나리오는 자리 채우기용. 습도는 시나리오 합성값 그대로 (실측 습도는 재현 불가)
         sensors = PiSensors(Scenario("normal", datetime(2026, 11, 1)), settings["pi"])
+        none_before = count_missing(signals)  # data_loss 시나리오의 원래 끊김 구간
         for i, key in enumerate(signals, 1):
             signals[key] = hil_signal(signals[key], sensors, errors)
             print(f"  측정 {i}/{len(signals)}: {key[0]} seed {key[1]}", end="\r")
         print()
+        read_failures = count_missing(signals) - none_before  # I2C 오류·자가진단 실패 → 장치처럼 None 처리된 수
 
     runs: list[dict] = []  # 결과 파일용 원자료: 방식 × 시나리오 × seed 1회 = 1행
     for method in METHODS:
@@ -92,7 +99,8 @@ def main(seeds: int, days: float, out_dir: Path, hil: bool) -> None:
         abs_err = [abs(e) for _, e in errors]
         conditions["dac_adc_error_mA"] = {"count": len(errors), "mean_abs": round(sum(abs_err) / len(abs_err), 4),
                                           "max_abs": round(max(abs_err), 4)} if errors else None
-        print(f"DAC→ADC 오차: {conditions['dac_adc_error_mA']}")
+        conditions["hil_read_failures"] = read_failures
+        print(f"DAC→ADC 오차: {conditions['dac_adc_error_mA']}, 측정 실패 {read_failures}회")
     save_results(out_dir, runs, conditions, settings)
     if errors:  # 원자료: 오차 분포 그림용 (make_figures.py)
         with open(out_dir / "dac_adc_errors.csv", "w", newline="", encoding="utf-8") as f:
