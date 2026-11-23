@@ -1,0 +1,8 @@
+﻿방식,경보 여부 일치,탐지 시간 차이 최대 (h),뒤집힌 재생
+고정 임계값,70/70,18.00,-
+EWMA (학습 최대값),70/70,0.40,-
+EWMA (표준 L=3),70/70,1.20,-
+IF (학습 최대값),66/70,228.80,data_loss seed 4 (SIL True → HIL False); normal seed 2 (SIL True → HIL False); repeated_spike seed 6 (SIL True → HIL False); short_spike seed 2 (SIL True → HIL False)
+IF (표준 s>0.5),70/70,7.20,-
+제안 방법,70/70,2.00,-
+제안 방법 (습도 제외),70/70,0.40,-

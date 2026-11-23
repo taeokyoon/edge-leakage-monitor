@@ -169,3 +169,10 @@ def test_plant_normal_days_moves_event_start():
     result = evaluation.summarize("sharp_rise", evaluation.replay("sharp_rise", 5, settings, "linear", 0, plant=plant),
                                   plant)
     assert result["alarm"] and result["delay"] < timedelta(hours=6)
+
+
+def test_humidity_scale_zero_removes_humidity_effect():
+    # 습도 영향 없음(배율 0): 습도가 바뀌어도 정상 누설전류가 같다. 기본 배율 1은 기존 값 그대로
+    from leakmon.scenario import normal_leakage
+    assert normal_leakage(90, 0, humidity_scale=0.0) == normal_leakage(55, 0, humidity_scale=0.0)
+    assert normal_leakage(90, 0, humidity_scale=1.0) == normal_leakage(90, 0)

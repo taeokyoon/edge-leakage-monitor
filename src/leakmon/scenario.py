@@ -27,12 +27,16 @@ class Plant:
 
     - humidity_model: linear = 습도에 비례 / nonlinear = 60~70%에서 급증 후 완만 (Dolník et al., 2022 측정 경향)
       → 제안 모델(선형 회귀)과 다른 구조의 데이터에서도 동작하는지 확인 (모델 불일치)
+    - humidity_scale: 습도 영향 크기 배율 (1 = 기본, 0 = 습도가 누설전류에 영향 없음)
+      → 저압 회로에서 습도 영향이 뚜렷하지 않다는 보고(한경철·최용성, 2019)가 있으므로,
+        영향이 작거나 없어도 제안 방법이 동작하는지 확인
     - noise_mA: 측정 노이즈 표준편차
     - weather_pct: 날씨에 따른 며칠 주기(4일) 습도 변동 폭 (±%p). 학습 기간에 습도 범위가 넓어지는 효과
     - normal_days: 이상 시작 전 정상 구간 (학습 기간을 늘리는 실험용)
     - rise_mA_per_day: gradual_rise의 상승 속도
     """
     humidity_model: str = "linear"
+    humidity_scale: float = 1.0
     noise_mA: float = 0.05
     weather_pct: float = 0.0
     normal_days: float = 1.0
@@ -64,7 +68,8 @@ def _sigmoid(humidity_pct: float) -> float:
     return 1 / (1 + math.exp(-(humidity_pct - 65) / 3))  # 65% 중심, 60~70%에서 급증
 
 
-def normal_leakage(humidity_pct: float, hour: float, humidity_model: str = "linear") -> float:
+def normal_leakage(humidity_pct: float, hour: float, humidity_model: str = "linear",
+                   humidity_scale: float = 1.0) -> float:
     """습도를 반영한 합성 정상 변동: 정상 설비라면 누설전류가 이 값 근처에 있다."""
     running = 8 <= hour < 18
     if humidity_model == "nonlinear":
@@ -74,7 +79,7 @@ def normal_leakage(humidity_pct: float, hour: float, humidity_model: str = "line
             _sigmoid(90) - _sigmoid(HUMIDITY_REF_pct))
     else:
         humidity_part = HUMIDITY_COEF_mA * (humidity_pct - HUMIDITY_REF_pct)
-    return BASE_mA + humidity_part + (RUNNING_EXTRA_mA if running else 0.0)
+    return BASE_mA + humidity_scale * humidity_part + (RUNNING_EXTRA_mA if running else 0.0)
 
 
 class Scenario:
@@ -107,7 +112,8 @@ class Scenario:
         humidity = self._humidity(now, hour, since_event) + self.rng.gauss(0, 0.3)  # 실측을 써도 난수 순서는 유지
         if humidity_pct is not None:
             humidity = humidity_pct
-        leakage = (normal_leakage(humidity, hour, self.plant.humidity_model) + self._fault_mA(since_event)
+        normal = normal_leakage(humidity, hour, self.plant.humidity_model, self.plant.humidity_scale)
+        leakage = (normal + self._fault_mA(since_event)
                    + self.rng.gauss(0, self.plant.noise_mA))
         return {"leakage_mA": round(leakage, 3), "humidity_pct": round(humidity, 1), "source": "sim"}
 

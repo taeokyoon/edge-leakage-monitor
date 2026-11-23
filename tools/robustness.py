@@ -24,6 +24,8 @@ WEATHER = 10.0
 CONDITIONS = [
     ("A", "기본", Plant(), 1),
     ("A", "습도 비선형", Plant(humidity_model="nonlinear"), 1),
+    ("A", "습도 영향 1/4", Plant(humidity_scale=0.25), 1),
+    ("A", "습도 영향 없음", Plant(humidity_scale=0.0), 1),
     ("A", "노이즈 2배", Plant(noise_mA=0.10), 1),
     ("A", "노이즈 4배", Plant(noise_mA=0.20), 1),
     *[("B", f"{model} 학습 {days}일", Plant(humidity_model=model, weather_pct=WEATHER, normal_days=days), days)

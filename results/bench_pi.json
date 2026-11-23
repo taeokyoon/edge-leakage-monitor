@@ -1,0 +1,43 @@
+{
+  "host": "carlos",
+  "machine": "aarch64",
+  "python": "3.13.5",
+  "learning_samples": 60,
+  "train_linear": {
+    "median_ms": 2.871,
+    "max_ms": 3.43,
+    "repeat": 20
+  },
+  "train_iforest": {
+    "median_ms": 407.892,
+    "max_ms": 409.569,
+    "repeat": 20
+  },
+  "judge_linear": {
+    "median_ms": 0.014,
+    "max_ms": 0.074,
+    "repeat": 20
+  },
+  "judge_iforest": {
+    "median_ms": 22.212,
+    "max_ms": 22.846,
+    "repeat": 20
+  },
+  "learning_samples_7d": 420,
+  "train_linear_7d": {
+    "median_ms": 3.817,
+    "max_ms": 4.187,
+    "repeat": 20
+  },
+  "train_iforest_7d": {
+    "median_ms": 444.895,
+    "max_ms": 447.059,
+    "repeat": 20
+  },
+  "sensor_dac_adc": {
+    "median_ms": 16.403,
+    "max_ms": 16.523,
+    "repeat": 20
+  },
+  "peak_rss_MB": 125.8
+}

@@ -1,0 +1,59 @@
+{
+  "commit": "c94febe31fa56cf31a7abd8a00f23410e7ff71c5",
+  "uncommitted_changes": false,
+  "run_at": "2026-11-23T20:29:08",
+  "host": "carlos",
+  "conditions": {
+    "experiment": "exp2_hil",
+    "seeds": 10,
+    "days": 14,
+    "dac_adc_error_mA": {
+      "count": 58720,
+      "mean_abs": 0.0121,
+      "max_abs": 0.0519
+    },
+    "hil_read_failures": 0
+  },
+  "settings": {
+    "hardware": "sim",
+    "device_id": "press-01",
+    "sample_period_s": 1.0,
+    "time_scale": 1440,
+    "db_path": "/home/seunghyeon/edge-leakage-monitor/data/leakmon.db",
+    "mqtt": {
+      "host": "localhost",
+      "port": 8883,
+      "ca_file": "/home/seunghyeon/edge-leakage-monitor/broker/certs/ca.crt"
+    },
+    "state": {
+      "t1": 0.5,
+      "t2": 1.0,
+      "d1_min": 120,
+      "d2_min": 240,
+      "recover_min": 120,
+      "fault_after_min": 60,
+      "spike_window_min": 1440,
+      "spike_count": 3
+    },
+    "baseline": {
+      "normal_mA": 4.5,
+      "alarm_mA": 9.0
+    },
+    "ai": {
+      "method": "linear",
+      "model_path": "models/linear.json",
+      "learn_days": 1,
+      "sigma_scale": 10
+    },
+    "pi": {
+      "i2c_bus": 1,
+      "leakage_input": "dac",
+      "humidity": "dht20",
+      "mA_per_V": 5.0,
+      "loopback_tol_mA": 0.5
+    },
+    "web": {
+      "port": 8000
+    }
+  }
+}

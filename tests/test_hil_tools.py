@@ -105,3 +105,26 @@ def test_hil_read_failures_counted_without_original_gaps():
     before = count_missing(signals)
     signals[("x", 0)] = hil_signal(rows, make(FakeBus(broken=True)), [])
     assert count_missing(signals) - before == 2
+
+
+def test_hil_replay_restores_pi_measurement(tmp_path):
+    # Pi 측정값 = DAC 실제 출력(코드 단위로 잘린 값) + 기록 오차. 끊김(None)은 건너뛰고 순서대로 붙인다
+    from evaluate import signals_from_pi_errors
+
+    from leakmon.sensors.pi import DAC_VREF, mA_to_dac_code
+    errors = tmp_path / "dac_adc_errors.csv"
+    errors.write_text("target_mA,error_mA\n5.0,0.01\n6.0,-0.02\n")
+    signals = {("x", 0): [{"leakage_mA": 5.0}, {"leakage_mA": None}, {"leakage_mA": 6.0}]}
+    signals_from_pi_errors(signals, errors, 5.0)
+    sent = mA_to_dac_code(5.0, 5.0) / 4095 * DAC_VREF * 5.0
+    assert signals[("x", 0)][0]["leakage_mA"] == round(sent + 0.01, 3)
+    assert signals[("x", 0)][1]["leakage_mA"] is None
+
+
+def test_hil_replay_rejects_misaligned_record(tmp_path):
+    # 기록의 목표값이 신호와 다르면(조건·코드가 다른 결과) 엉뚱한 측정을 붙이지 않고 멈춘다
+    from evaluate import signals_from_pi_errors
+    errors = tmp_path / "dac_adc_errors.csv"
+    errors.write_text("target_mA,error_mA\n7.0,0.01\n")
+    with pytest.raises(ValueError):
+        signals_from_pi_errors({("x", 0): [{"leakage_mA": 5.0}]}, errors, 5.0)

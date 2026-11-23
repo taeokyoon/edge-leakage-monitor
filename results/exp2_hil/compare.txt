@@ -1,0 +1,8 @@
+■ baseline: 경보 여부 일치 70/70, 탐지 시간 차이 최대 18.00시간
+■ iforest: 경보 여부 일치 66/70, 탐지 시간 차이 최대 228.80시간
+  뒤집힘: data_loss seed 4 (SIL True → HIL False)
+  뒤집힘: normal seed 2 (SIL True → HIL False)
+  뒤집힘: repeated_spike seed 6 (SIL True → HIL False)
+  뒤집힘: short_spike seed 2 (SIL True → HIL False)
+■ iforest_std: 경보 여부 일치 70/70, 탐지 시간 차이 최대 7.20시간
+■ linear: 경보 여부 일치 70/70, 탐지 시간 차이 최대 2.00시간

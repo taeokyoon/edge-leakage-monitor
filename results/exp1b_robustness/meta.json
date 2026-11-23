@@ -1,7 +1,7 @@
 {
-  "commit": "a9d1d030abdddca5422db5e8bf37f74a89f4ccd9",
+  "commit": "c94febe31fa56cf31a7abd8a00f23410e7ff71c5",
   "uncommitted_changes": true,
-  "run_at": "2026-11-18T14:53:28",
+  "run_at": "2026-11-24T00:19:12",
   "host": "BOOK-4HD0IHE4PI",
   "conditions": {
     "experiment": "exp1b_robustness",
@@ -11,6 +11,8 @@
       "A": [
         "기본",
         "습도 비선형",
+        "습도 영향 1/4",
+        "습도 영향 없음",
         "노이즈 2배",
         "노이즈 4배"
       ],
@@ -30,6 +32,7 @@
     "plants": {
       "기본": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 0.0,
         "normal_days": 1.0,
@@ -38,6 +41,25 @@
       },
       "습도 비선형": {
         "humidity_model": "nonlinear",
+        "humidity_scale": 1.0,
+        "noise_mA": 0.05,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "습도 영향 1/4": {
+        "humidity_model": "linear",
+        "humidity_scale": 0.25,
+        "noise_mA": 0.05,
+        "weather_pct": 0.0,
+        "normal_days": 1.0,
+        "rise_mA_per_day": 0.5,
+        "learn_days": 1
+      },
+      "습도 영향 없음": {
+        "humidity_model": "linear",
+        "humidity_scale": 0.0,
         "noise_mA": 0.05,
         "weather_pct": 0.0,
         "normal_days": 1.0,
@@ -46,6 +68,7 @@
       },
       "노이즈 2배": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.1,
         "weather_pct": 0.0,
         "normal_days": 1.0,
@@ -54,6 +77,7 @@
       },
       "노이즈 4배": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.2,
         "weather_pct": 0.0,
         "normal_days": 1.0,
@@ -62,6 +86,7 @@
       },
       "linear 학습 1일": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 10.0,
         "normal_days": 1,
@@ -70,6 +95,7 @@
       },
       "linear 학습 3일": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 10.0,
         "normal_days": 3,
@@ -78,6 +104,7 @@
       },
       "linear 학습 7일": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 10.0,
         "normal_days": 7,
@@ -86,6 +113,7 @@
       },
       "nonlinear 학습 1일": {
         "humidity_model": "nonlinear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 10.0,
         "normal_days": 1,
@@ -94,6 +122,7 @@
       },
       "nonlinear 학습 3일": {
         "humidity_model": "nonlinear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 10.0,
         "normal_days": 3,
@@ -102,6 +131,7 @@
       },
       "nonlinear 학습 7일": {
         "humidity_model": "nonlinear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 10.0,
         "normal_days": 7,
@@ -110,6 +140,7 @@
       },
       "상승 0.25mA/일": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 0.0,
         "normal_days": 1.0,
@@ -118,6 +149,7 @@
       },
       "상승 1.0mA/일": {
         "humidity_model": "linear",
+        "humidity_scale": 1.0,
         "noise_mA": 0.05,
         "weather_pct": 0.0,
         "normal_days": 1.0,

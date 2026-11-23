@@ -4,7 +4,8 @@
 입력 (있는 것만 사용)
 - results/exp1_sil/   실험 1 (필수) → 시나리오·지표 표, 통계 검정 표, 탐지 시간·시계열 그림
 - results/exp1b_robustness/ 실험 1b → 강건성 표, 임계값 조사(오경보 vs 탐지 시간) 그림
-- results/exp2_hil/   실험 2 → SIL↔HIL 일치표 + DAC→ADC 오차 그림
+- results/exp2_hil/   실험 2 (Pi 원본) → DAC→ADC 오차 그림, 일치표 (재생 결과가 없을 때)
+- results/exp2_hil_replay/ 실험 2 재생 (Pi 측정값 복원, 방식 추가분 포함) → SIL↔HIL 일치표
 - results/bench_pi.json 실험 3 → 처리 시간·메모리 표
 - results/exp4_security/ 실험 4 → 보안 케이스 표
 출력: 표 = CSV(UTF-8 BOM, 한글 Word·엑셀에서 바로 열림), 그림 = PNG 300dpi
@@ -28,12 +29,14 @@ from leakmon.config import load_settings  # noqa: E402
 from leakmon.evaluation import METHODS, replay  # noqa: E402
 from leakmon.scenario import ALARM_EXPECTED, EVENT_START, SCENARIOS  # noqa: E402
 
-LABELS = {"baseline": "고정 임계값", "iforest": "IF (학습 최대값)", "iforest_std": "IF (표준 s>0.5)",
-          "linear": "제안 방법"}
+LABELS = {"baseline": "고정 임계값", "ewma": "EWMA (학습 최대값)", "ewma_std": "EWMA (표준 L=3)",
+          "iforest": "IF (학습 최대값)", "iforest_std": "IF (표준 s>0.5)",
+          "linear_nohum": "제안 방법 (습도 제외)", "linear": "제안 방법"}
 SCENARIO_LABELS = {"normal": "정상", "gradual_rise": "완만한 상승", "humidity_rise": "습도 상승",
                    "short_spike": "순간 급등 1회", "repeated_spike": "반복 급등", "sharp_rise": "급상승",
                    "data_loss": "데이터 끊김"}
-COLORS = {"baseline": "#d62728", "iforest": "#ff7f0e", "iforest_std": "#9467bd", "linear": "#1f77b4"}
+COLORS = {"baseline": "#d62728", "ewma": "#8c564b", "ewma_std": "#e377c2", "iforest": "#ff7f0e",
+          "iforest_std": "#9467bd", "linear_nohum": "#17becf", "linear": "#1f77b4"}
 # 한글 글꼴 후보 (WSL은 Windows 글꼴, Pi·리눅스는 나눔). 없으면 기본 글꼴 → 한글이 네모로 나옴
 FONT_CANDIDATES = ["/mnt/c/Windows/Fonts/malgun.ttf", "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"]
 
@@ -97,14 +100,29 @@ def exp1_tables(runs: list[dict], out: Path) -> None:
                         "오경보 재생 수": f"{false_alarms}/{len(seeds) * (len(SCENARIOS) - len(ALARM_EXPECTED))}"})
     write_csv(out / "table_exp1_metrics.csv", table_b)
 
+    # 논문 본문용 압축 표 (8쪽 제한): 방식별 핵심 지표만 한 표에
+    table_main = []
+    for m in METHODS:
+        rs = [r for r in runs if r["method"] == m]
+        hum = [r for r in rs if r["scenario"] == "humidity_rise"]
+        false_alarms = sum(r["alarm"] == "True" for r in rs if r["scenario"] not in ALARM_EXPECTED)
+        delays = {n: mean_std([float(r["delay_h"]) for r in rs if r["scenario"] == n and r["delay_h"]])
+                  for n in ("gradual_rise", "sharp_rise")}
+        table_main.append({"방식": LABELS[m],
+                           "오경보 재생": f"{false_alarms}/{len(seeds) * (len(SCENARIOS) - len(ALARM_EXPECTED))}",
+                           "습도 상승 오경보": f"{sum(r['alarm'] == 'True' for r in hum)}/{len(hum)}",
+                           "완만한 상승 탐지 (h)": delays["gradual_rise"], "급상승 탐지 (h)": delays["sharp_rise"],
+                           "F1": f"{prf(rs)[2]:.2f}"})
+    write_csv(out / "table_exp1_main.csv", table_main)
+
 
 def fig_delay(runs: list[dict], out: Path) -> None:
-    """그림: 경보가 정답인 시나리오별 평균 탐지 시간 (고정 임계값 vs 제안 방법)
+    """그림: 경보가 정답인 시나리오별 평균 탐지 시간 (고정 임계값, EWMA, 습도 제외, 제안 방법)
 
-    IF는 넣지 않는다: 표준 기준은 상시 경보라 탐지 시간이 무의미하고, 학습 최대값 기준은 탐지된 5회만의 평균이라
-    비교가 공정하지 않다 → IF는 표(탐지 횟수·F1)로 비교
+    EWMA 표준 기준·IF는 넣지 않는다: 표준 기준은 정상에서도 상시 경보라 탐지 시간이 무의미하고,
+    IF 학습 최대값 기준은 탐지된 5회만의 평균이라 비교가 공정하지 않다 → 표(탐지 횟수·F1)로 비교
     """
-    methods = ("baseline", "linear")
+    methods = ("baseline", "ewma", "linear_nohum", "linear")
     fig, ax = plt.subplots(figsize=(5.5, 3.0))
     width = 0.8 / len(methods)
     alarm_scenarios = [s for s in SCENARIOS if s in ALARM_EXPECTED]
@@ -173,26 +191,33 @@ def per_seed(runs: list[dict], method: str, scenario: str, key: str = "delay_h")
     return [float(r[key]) for r in rs]
 
 
+# 제안 방법과 짝지어 검정할 방식: 현장 관행(고정 임계값), 가장 강한 비교(EWMA), 제거 실험(습도 제외)
+STATS_RIVALS = ("baseline", "ewma", "linear_nohum")
+
+
 def exp1_stats(runs: list[dict], out: Path) -> None:
-    """표: 제안 방법 vs 고정 임계값의 차이가 우연인지 (Wilcoxon 부호순위 검정, 같은 seed끼리 짝지음, 양측)
+    """표: 제안 방법과 다른 방식의 차이가 우연인지 (Wilcoxon 부호순위 검정, 같은 seed끼리 짝지음, 양측)
 
     seed 10개라 정규분포 가정을 못 하므로 비모수 검정을 쓴다. 모든 seed에서 차이가 0이면 검정 불가 → "차이 없음"
     """
     rows = []
     seeds = sorted({r["seed"] for r in runs}, key=int)
-    targets = [(f"탐지 시간: {SCENARIO_LABELS[n]}", per_seed(runs, "baseline", n), per_seed(runs, "linear", n))
-               for n in SCENARIOS if n in ALARM_EXPECTED]
-    targets.append(("F1 (seed별)",
-                    [prf([r for r in runs if r["method"] == "baseline" and r["seed"] == s])[2] for s in seeds],
-                    [prf([r for r in runs if r["method"] == "linear" and r["seed"] == s])[2] for s in seeds]))
-    for label, base, prop in targets:
-        diffs = [p - b for b, p in zip(base, prop, strict=True)]
-        p_value = "차이 없음" if not any(diffs) else f"{wilcoxon(base, prop).pvalue:.4f}"
-        better = sum(d < 0 for d in diffs) if label.startswith("탐지") else sum(d > 0 for d in diffs)  # 시간은 짧을수록
-        rows.append({"비교 항목": label, "고정 임계값 평균": f"{statistics.mean(base):.2f}",
-                     "제안 방법 평균": f"{statistics.mean(prop):.2f}", "짝 수(seed)": len(diffs),
-                     "제안이 나은 seed 수": better,
-                     "p값 (Wilcoxon, 양측)": p_value})
+    for rival in (m for m in STATS_RIVALS if any(r["method"] == m for r in runs)):
+        targets = [(f"탐지 시간: {SCENARIO_LABELS[n]}", per_seed(runs, rival, n), per_seed(runs, "linear", n))
+                   for n in SCENARIOS if n in ALARM_EXPECTED]
+        targets.append(("F1 (seed별)",
+                        [prf([r for r in runs if r["method"] == rival and r["seed"] == s])[2] for s in seeds],
+                        [prf([r for r in runs if r["method"] == "linear" and r["seed"] == s])[2] for s in seeds]))
+        for label, base, prop in targets:
+            diffs = [p - b for b, p in zip(base, prop, strict=True)]
+            p_value = "차이 없음" if not any(diffs) else f"{wilcoxon(base, prop).pvalue:.4f}"
+            # 탐지 시간은 짧을수록, F1은 클수록 제안이 나음
+            better = sum(d < 0 for d in diffs) if label.startswith("탐지") else sum(d > 0 for d in diffs)
+            rows.append({"비교 방식": LABELS[rival], "비교 항목": label,
+                         "비교 방식 평균": f"{statistics.mean(base):.2f}",
+                         "제안 방법 평균": f"{statistics.mean(prop):.2f}", "짝 수(seed)": len(diffs),
+                         "제안이 나은 seed 수": better,
+                         "p값 (Wilcoxon, 양측)": p_value})
     write_csv(out / "table_exp1_stats.csv", rows)
 
 
@@ -215,6 +240,17 @@ def robustness_table(runs: list[dict], out: Path) -> None:
                          "완만한 상승 탐지": f"{len(delays)}/{sum(r['scenario'] == 'gradual_rise' for r in rs)}",
                          "완만한 상승 탐지 시간 (h)": mean_std(delays)})
     write_csv(out / "table_exp1b_robustness.csv", rows)
+
+    # 논문 본문용 요약: 조건 × 주요 방식의 F1만
+    summary_methods = [m for m in ("baseline", "ewma", "linear_nohum", "linear") if any(r["method"] == m for r in runs)]
+    summary = []
+    for group, cond in conditions:
+        row = {"조건": cond}
+        for m in summary_methods:
+            rs = [r for r in runs if r["group"] == group and r["condition"] == cond and r["method"] == m]
+            row[LABELS[m]] = f"{prf(rs)[2]:.2f}"
+        summary.append(row)
+    write_csv(out / "table_exp1b_summary.csv", summary)
 
 
 def fig_tradeoff(runs: list[dict], out: Path) -> None:
@@ -254,8 +290,8 @@ def exp2_table(sil_dir: Path, hil_dir: Path, out: Path) -> None:
              "탐지 시간 차이 최대 (h)": f"{v['max_delay_diff_h']:.2f}", "뒤집힌 재생": "; ".join(v["flipped"]) or "-"}
             for m, v in compare(load(sil_dir), load(hil_dir)).items()]
     write_csv(out / "table_exp2_agreement.csv", rows)
-    err = json.loads((hil_dir / "meta.json").read_text(encoding="utf-8"))["conditions"].get("dac_adc_error_mA")
-    print(f"DAC→ADC 오차 (mA): {err}")
+    err = json.loads((Path("results/exp2_hil") / "meta.json").read_text(encoding="utf-8"))["conditions"]
+    print(f"DAC→ADC 오차 (mA): {err.get('dac_adc_error_mA')}")
 
 
 BENCH_LABELS = {"train_linear": "학습 1일 - 제안 방법", "train_iforest": "학습 1일 - Isolation Forest",
@@ -331,8 +367,12 @@ def main(out: Path) -> None:
         fig_tradeoff(robust_runs, out)
     else:
         print("실험 1b 결과 없음 (python tools/robustness.py 실행 필요) → 건너뜀")
-    if (Path("results/exp2_hil") / "runs.csv").exists():
-        exp2_table(sil, Path("results/exp2_hil"), out)
+    # 일치표: Pi 측정값 복원 재생(방식 추가분 포함)이 있으면 그것을, 없으면 Pi 원본 결과를 쓴다
+    replay_dir = Path("results/exp2_hil_replay")
+    hil_runs = replay_dir if (replay_dir / "runs.csv").exists() else Path("results/exp2_hil")
+    if (hil_runs / "runs.csv").exists():
+        print(f"실험 2 일치표 입력: {hil_runs}")
+        exp2_table(sil, hil_runs, out)
         if (Path("results/exp2_hil") / "dac_adc_errors.csv").exists():
             fig_dac_errors(Path("results/exp2_hil"), out)
     else:

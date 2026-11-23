@@ -1,7 +1,9 @@
 """시나리오 재생: 같은 시나리오를 방식별로 상태 머신에 넣어 결과를 비교한다 (MQTT·DB 없이 빠르게).
 
-방식: baseline = 고정 임계값 / iforest = Isolation Forest (학습 최대값 기준)
+방식: baseline = 고정 임계값 / ewma·ewma_std = EWMA 관리도 (학습 최대값·표준 L=3 기준)
+      / iforest = Isolation Forest (학습 최대값 기준)
       / iforest_std = Isolation Forest (표준 s>0.5 기준) / linear = 선형 회귀 + 잔차 (제안 방법)
+      / linear_nohum = 제안 방법에서 습도 입력만 뺀 것 (제거 실험: 습도 반영의 효과를 따로 보기 위함)
 AI 방식은 처음 learn_days일이 학습 기간이다 (점수 0 = 판정 없이 정상 유지, 미수신은 그대로 넣어 센서장애는 잡는다).
 테스트(tests/test_scenarios.py)와 평가 도구(tools/evaluate.py)가 같이 쓴다.
 """
@@ -13,13 +15,14 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from .ai import ewma
 from .ai.baseline import fixed_threshold_score
 from .ai.iforest import train_scorer
 from .ai.model import residual_score, train
 from .scenario import ALARM_EXPECTED, DEFAULT_PLANT, Plant, generate
 from .state import StateMachine
 
-METHODS = ("baseline", "iforest", "iforest_std", "linear")
+METHODS = ("baseline", "ewma", "ewma_std", "iforest", "iforest_std", "linear_nohum", "linear")
 
 
 def replay(name: str, days: float, settings: dict, method: str = "linear", seed: int = 0,
@@ -42,8 +45,15 @@ def replay(name: str, days: float, settings: dict, method: str = "linear", seed:
         b = settings["baseline"]
         score_all = lambda batch: [fixed_threshold_score(r["leakage_mA"], b["normal_mA"], b["alarm_mA"])  # noqa: E731
                                    for r in batch]
+    elif method in ("ewma", "ewma_std"):
+        score_all = ewma.train_scorer(learning, settings["state"]["t1"], standard=method == "ewma_std")
     elif method in ("iforest", "iforest_std"):
         score_all = train_scorer(learning, settings["state"]["t1"], standard=method == "iforest_std")
+    elif method == "linear_nohum":
+        # 습도를 모든 행에서 0으로 → 습도 계수가 0이 되어 "가동 여부만 아는 회귀"가 된다 (나머지는 제안 방법과 동일)
+        model, scale = train([{**r, "humidity_pct": 0.0} for r in learning]), settings["ai"]["sigma_scale"]
+        score_all = lambda batch: [residual_score(model, r["leakage_mA"], 0.0, r["ts"], scale)  # noqa: E731
+                                   for r in batch]
     else:
         model, scale = train(learning), settings["ai"]["sigma_scale"]
         score_all = lambda batch: [residual_score(model, r["leakage_mA"], r["humidity_pct"], r["ts"], scale)  # noqa: E731

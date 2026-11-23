@@ -10,3 +10,5 @@ broker/certs/
 broker/passwd
 config/secrets.yaml
 LEARN.md
+
+results_pi_*.tgz
